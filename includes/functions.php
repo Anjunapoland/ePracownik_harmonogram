@@ -535,8 +535,13 @@ function request_pdf_escape(string $text): string {
 function request_pdf_safe_text(string $text): string {
     $ascii = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $text);
     if ($ascii === false || $ascii === '') {
-        $ascii = preg_replace('/[^ -~]/', '', $text) ?? '';
+        $ascii = preg_replace('/[^\x20-\x7E]/', ' ', $text) ?? '';
     }
+    $ascii = str_replace(["
+", "
+", "	"], ' ', $ascii);
+    $ascii = preg_replace('/[^\x20-\x7E]/', ' ', $ascii) ?? '';
+    $ascii = preg_replace('/\s+/', ' ', trim($ascii)) ?? '';
     return request_pdf_escape($ascii);
 }
 
