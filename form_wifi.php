@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/layout.php';
 $user = require_login();
+ensure_users_profile_columns();
 $formsVisible = get_setting('forms_visible', '1') === '1';
 if (!$formsVisible && !is_admin()) { header('Location: schedule.php'); exit; }
 layout_start('Oświadczenie Wi-Fi');
@@ -68,6 +69,10 @@ layout_start('Oświadczenie Wi-Fi');
             <input class="fg-input" type="text" id="fName" value="<?=h($user['full_name'])?>" oninput="up()">
         </div>
         <div>
+            <label class="fg-label">Stanowisko służbowe</label>
+            <input class="fg-input" type="text" id="fPosition" value="<?=h($user['job_title'] ?? '')?>" oninput="up()">
+        </div>
+        <div>
             <label class="fg-label">Miejscowość i data</label>
             <input class="fg-input" type="text" id="fPlace" value="Strzegom, <?=date('d.m.Y')?>" oninput="up()">
         </div>
@@ -86,7 +91,7 @@ layout_start('Oświadczenie Wi-Fi');
             <div class="fdoc-title">OŚWIADCZENIE PRACOWNIKA</div>
             <div class="fdoc-subtitle">dotyczące przekazania klucza dostępu do sieci Wi-Fi<br>Strzegomskiego Centrum Kultury</div>
 
-            <p>Ja, niżej podpisany/a, <span class="fdoc-field" id="docName"><?=h($user['full_name'])?></span>, zatrudniony/a w Strzegomskim Centrum Kultury, oświadczam, że w dniu <span class="fdoc-field-block"></span> otrzymałem/am od Administratora sieci / osoby uprawnionej dostęp do firmowej sieci bezprzewodowej Wi-Fi, na zasadach określonych poniżej.</p>
+            <p>Ja, niżej podpisany/a, <span class="fdoc-field" id="docName"><?=h($user['full_name'])?></span>, zatrudniony/a na stanowisku <span class="fdoc-field" id="docPosition"><?=h($user['job_title'] ?? '')?></span> w Strzegomskim Centrum Kultury, oświadczam, że w dniu <span class="fdoc-field-block"></span> otrzymałem/am od Administratora sieci / osoby uprawnionej dostęp do firmowej sieci bezprzewodowej Wi-Fi, na zasadach określonych poniżej.</p>
 
             <div class="fdoc-section">1. Dane sieci przekazane do mojej wiadomości</div>
             <p>Poniższe dane zostały przekazane wyłącznie do mojej wiadomości i przeznaczone są do korzystania w związku z wykonywaniem obowiązków służbowych na terenie Strzegomskiego Centrum Kultury.</p>
@@ -150,6 +155,7 @@ layout_start('Oświadczenie Wi-Fi');
 function up(){
     document.getElementById('docName').textContent=document.getElementById('fName').value;
     document.getElementById('docPlace').textContent=document.getElementById('fPlace').value;
+    document.getElementById('docPosition').textContent=document.getElementById('fPosition').value;
 }
 function doPrint(){
     if(!document.getElementById('fName').value.trim()){alert('Wypełnij imię i nazwisko.');document.getElementById('fName').focus();return;}

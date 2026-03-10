@@ -69,12 +69,24 @@ if ($action === 'selected_cells') {
             $stTypes = get_shift_types();
             $stLabel = mb_strtolower($stTypes[$type]['label'] ?? '');
             $isNoTime = in_array($type, $noTimeTypes, true) || strpos($stLabel,'urlop')!==false || strpos($stLabel,'chorobow')!==false;
-            if ($type === 'wolne') $label = 'W';
-            elseif ($type === 'brak') $label = 'X';
+            $tooltipNote = $note;
+            if ($type === 'wolne') $label = 'Wolne (W)';
+            elseif ($type === 'brak') $label = 'WZ';
+            elseif ($type === 'wydarzenie') {
+                if (strpos($note, '||') !== false) {
+                    [$eventLabel, $eventNote] = array_pad(array_map('trim', explode('||', $note, 2)), 2, '');
+                    $label = $eventLabel !== '' ? $eventLabel : 'Wydarzenie';
+                    $tooltipNote = $eventNote;
+                } else {
+                    $label = trim($note) !== '' ? trim($note) : 'Wydarzenie';
+                    $tooltipNote = '';
+                }
+            }
             elseif ($isNoTime) $label = $stTypes[$type]['label'] ?? $type;
-            elseif ($type === 'swieto') $label = $note ? mb_substr($note,0,8) : 'Święto';
-            elseif ($type === 'dyzur') $label = ($start && $end) ? short_time($start).'-'.short_time($end) : 'DYŻUR';
-            else $label = ($start && $end) ? short_time($start).'-'.short_time($end) : mb_substr(shift_label($type),0,6);
+            elseif ($type === 'swieto') $label = $note ? mb_substr($note,0,16) : 'Święto';
+            elseif ($type === 'dyzur') $label = 'Dyżur';
+            elseif ($type === 'standard' && $start && $end) $label = short_time($start).'-'.short_time($end);
+            else $label = $stTypes[$type]['label'] ?? shift_label($type);
 
             $updated[] = [
                 'id' => $id,
@@ -84,6 +96,7 @@ if ($action === 'selected_cells') {
                 'shift_start' => $start,
                 'shift_end' => $end,
                 'note' => $note,
+                'tooltip_note' => $tooltipNote,
                 'label' => $label,
                 'hours' => calc_hours($start, $end),
                 'color' => shift_color($type),

@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/layout.php';
 $user = require_admin();
+ensure_users_profile_columns();
 $msg=''; $mt='';
 
 if ($_SERVER['REQUEST_METHOD']==='POST') {
@@ -11,14 +12,15 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
     if ($act==='create') {
         $email=trim($_POST['email']??''); $name=trim($_POST['full_name']??'');
         $dept=trim($_POST['department']??'SCK'); $frac=(float)($_POST['employment_fraction']??1);
+        $jobTitle=trim($_POST['job_title']??'');
         $role=$_POST['role']??'employee';
         if(!in_array($role,['admin','kadry','employee']))$role='employee';
         $pass=trim($_POST['init_password']??'sck2025');
         if (!$email||!$name) { $msg='Wypełnij imię i e-mail'; $mt='danger'; }
         else {
             $hash=password_hash($pass, PASSWORD_DEFAULT);
-            $db->prepare('INSERT INTO users (email,password,full_name,department,employment_fraction,role,active,must_change_password) VALUES (?,?,?,?,?,?,1,1)')
-               ->execute([$email,$hash,$name,$dept,$frac,$role]);
+            $db->prepare('INSERT INTO users (email,password,full_name,job_title,department,employment_fraction,role,active,must_change_password) VALUES (?,?,?,?,?,?,?,1,1)')
+               ->execute([$email,$hash,$name,$jobTitle,$dept,$frac,$role]);
             $msg="Utworzono konto: $name (hasło: $pass)"; $mt='success';
         }
     }
@@ -62,6 +64,24 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
             $mt = 'success';
         }
     }
+
+    if ($act==='update_email') {
+        $id=(int)($_POST['uid']??0);
+        $newEmail=trim($_POST['new_email']??'');
+        if (!$newEmail || !filter_var($newEmail, FILTER_VALIDATE_EMAIL)) {
+            $msg='Podaj poprawny adres e-mail'; $mt='danger';
+        } else {
+            $chk = $db->prepare('SELECT id FROM users WHERE email=? AND id<>? LIMIT 1');
+            $chk->execute([$newEmail, $id]);
+            if ($chk->fetch()) {
+                $msg='Ten adres e-mail jest już przypisany do innego konta'; $mt='danger';
+            } else {
+                $db->prepare('UPDATE users SET email=? WHERE id=?')->execute([$newEmail, $id]);
+                $msg='Adres e-mail został zaktualizowany'; $mt='success';
+            }
+        }
+    }
+
     if ($act==='delete_user') {
         $id=(int)($_POST['uid']??0);
         if ($id === $user['id']) { $msg='Nie możesz usunąć własnego konta'; $mt='danger'; }
@@ -148,7 +168,15 @@ layout_start('Pracownicy');
     </td>
     <?php endif; ?>
     <td><span class="badge <?=$e['active']?'badge-ok':'badge-danger'?>"><?=$e['active']?'Aktywne':'Zablok.'?></span></td>
-    <td style="font-size:11px;max-width:180px;overflow:hidden;text-overflow:ellipsis;color:#78716c"><?=h($e['email'])?></td>
+    <td style="min-width:260px">
+        <form method="post" style="display:flex;gap:6px;align-items:center">
+            <?=csrf_field()?>
+            <input type="hidden" name="action" value="update_email">
+            <input type="hidden" name="uid" value="<?=$e['id']?>">
+            <input name="new_email" type="email" class="input" value="<?=h($e['email'])?>" style="padding:6px 8px;font-size:11px;min-width:170px" required>
+            <button class="btn btn-sm btn-ghost" title="Zapisz e-mail">💾</button>
+        </form>
+    </td>
     <td style="white-space:nowrap">
         <form method="post" style="display:inline"><?=csrf_field()?><input type="hidden" name="action" value="toggle"><input type="hidden" name="uid" value="<?=$e['id']?>">
         <button class="btn btn-sm btn-ghost" title="<?=$e['active']?'Zablokuj konto':'Aktywuj konto'?>"><?=$e['active']?'🔒':'✅'?></button></form>
@@ -172,6 +200,7 @@ layout_start('Pracownicy');
     <label class="lbl">Imię i nazwisko</label><input name="full_name" class="input" required>
     <label class="lbl">E-mail służbowy</label><input name="email" type="email" class="input" required>
     <label class="lbl">Hasło początkowe</label><input name="init_password" class="input" value="sck2025">
+    <label class="lbl">Stanowisko służbowe</label><input name="job_title" class="input" placeholder="np. Specjalista ds. kultury">
     <small class="text-muted">Pracownik zmieni hasło przy 1. logowaniu</small>
     <div class="g2"><div><label class="lbl">Dział</label><input name="department" class="input" value="SCK"></div>
     <div><label class="lbl">Etat</label><select name="employment_fraction" class="input"><option value="1.00">1.0 (160h)</option><option value="0.75">0.75 (120h)</option><option value="0.50">0.5 (80h)</option><option value="0.25">0.25 (40h)</option></select></div></div>
