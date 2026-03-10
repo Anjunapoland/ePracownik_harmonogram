@@ -116,6 +116,35 @@ function seed_shift_types(): void {
     }
 }
 
+
+function get_wolne_overtime_delta_hours(string $date): float {
+    $ts = strtotime($date);
+    if ($ts === false) return 0.0;
+    $dow = (int)date('w', $ts); // 0=nd, 1=pn, ... 5=pt
+    if ($dow >= 1 && $dow <= 4) return 8.5;
+    if ($dow === 5) return 6.0;
+    return 0.0;
+}
+
+function apply_wolne_overtime_balance_change(int $userId, string $date, ?string $oldType, ?string $newType): void {
+    $oldIsWolne = ((string)$oldType === 'wolne');
+    $newIsWolne = ((string)$newType === 'wolne');
+    if ($oldIsWolne === $newIsWolne) return;
+
+    $hours = get_wolne_overtime_delta_hours($date);
+    if ($hours <= 0) return;
+
+    // Dodanie "wolne (W)" odejmuje godziny, zdjęcie takiego dnia oddaje godziny.
+    $delta = $newIsWolne ? -$hours : $hours;
+    $year = (int)date('Y', strtotime($date));
+
+    $db = get_db();
+    $db->prepare('INSERT IGNORE INTO leave_balances (user_id, year, overtime_hours, created_at, updated_at) VALUES (?,?,0,NOW(),NOW())')
+       ->execute([$userId, $year]);
+    $db->prepare('UPDATE leave_balances SET overtime_hours = ROUND(overtime_hours + ?, 1), updated_at=NOW() WHERE user_id=? AND year=?')
+       ->execute([$delta, $userId, $year]);
+}
+
 function month_hours(array $ue, int $dim): float {
     $total = 0;
     $types = get_shift_types();

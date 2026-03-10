@@ -19,11 +19,20 @@ $dim  = cal_days_in_month(CAL_GREGORIAN, $month, $year);
 $to   = sprintf('%04d-%02d-%02d', $year, $month, $dim);
 
 $db = get_db();
+
+$wolneStmt = $db->prepare("SELECT user_id, entry_date FROM schedule_entries WHERE shift_type='wolne' AND entry_date BETWEEN ? AND ?");
+$wolneStmt->execute([$from, $to]);
+$wolneRows = $wolneStmt->fetchAll();
+
 // Remove dyzur notifications for this month
 $db->prepare("DELETE FROM notifications WHERE type='dyzur' AND related_date BETWEEN ? AND ?")->execute([$from, $to]);
 // Remove schedule entries
 $stmt = $db->prepare('DELETE FROM schedule_entries WHERE entry_date BETWEEN ? AND ?');
 $stmt->execute([$from, $to]);
 $count = $stmt->rowCount();
+
+foreach ($wolneRows as $row) {
+    apply_wolne_overtime_balance_change((int)$row['user_id'], (string)$row['entry_date'], 'wolne', null);
+}
 
 json_out(['ok'=>true, 'count'=>$count]);

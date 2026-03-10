@@ -54,6 +54,8 @@ if ($action === 'selected_cells') {
                 $id = (int)$db->lastInsertId();
             }
 
+            apply_wolne_overtime_balance_change($uid, $date, $existingRow['shift_type'] ?? null, $type);
+
             $changed = (
                 !$existingRow ||
                 (string)($existingRow['shift_type'] ?? '') !== (string)$type ||
@@ -179,6 +181,7 @@ for ($d = 1; $d <= $dim; $d++) {
         $db->prepare('INSERT INTO schedule_entries (user_id, entry_date, shift_type, shift_start, shift_end, note, created_at, updated_at) VALUES (?,?,?,?,?,?,NOW(),NOW())')
            ->execute([$uid, $date, $type, $dayStart, $dayEnd, $note]);
     }
+    apply_wolne_overtime_balance_change($uid, $date, $existingRow['shift_type'] ?? null, $type);
     $count++;
 
     $changed = (
