@@ -18,6 +18,10 @@ $entry = $stmt->fetch();
 
 $db->prepare('DELETE FROM schedule_entries WHERE id=?')->execute([$id]);
 
+if ($entry) {
+    apply_wolne_overtime_balance_change((int)$entry['user_id'], (string)$entry['entry_date'], $entry['shift_type'] ?? null, null);
+}
+
 if ($entry && $entry['shift_type'] === 'dyzur') {
     $db->prepare("DELETE FROM notifications WHERE user_id=? AND type='dyzur' AND related_date=?")->execute([$entry['user_id'], $entry['entry_date']]);
 }
