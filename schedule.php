@@ -292,7 +292,7 @@ foreach($employees as $idx=>$emp):
     <?php for($d=1;$d<=$dim;$d++):
         $dow=(int)date('w',mktime(0,0,0,$month,$d,$year)); $we=$dow===0||$dow===6;
         $e=$ue[$d]??null;
-        $bg=$we?'#fef9f4':'#fff'; $fg='#78716c'; $label=''; $cellH=0; $noTime=false; $tooltip=''; $showHoursInCell=false;
+        $bg=$we?'#fef9f4':'#fff'; $fg='#78716c'; $label=''; $cellH=0; $noTime=false; $tooltip=''; $showHoursInCell=false; $hoursRange='';
         if($e){
             $st=$e['shift_type'];
             $stDef=$shiftTypes[$st]??[];
@@ -325,7 +325,8 @@ foreach($employees as $idx=>$emp):
             else $label=$stLabelFull;
 
             $cellH=$noTime?0:calc_hours($eStart,$eEnd);
-            $showHoursInCell = in_array($st, ['dyzur','wydarzenie'], true) && $cellH > 0;
+            $showHoursInCell = in_array($st, ['dyzur','wydarzenie'], true) && $eStart && $eEnd;
+            if ($showHoursInCell) $hoursRange = short_time($eStart).'-'.short_time($eEnd);
             $ttLines = [$label];
             if ($eStart && $eEnd) $ttLines[] = 'Godziny: '.short_time($eStart).' – '.short_time($eEnd);
             if ($cellH > 0) $ttLines[] = 'Suma: '.$cellH.'h';
@@ -353,7 +354,7 @@ foreach($employees as $idx=>$emp):
         <?php if($cellTip): ?>data-tip="<?=h($cellTip)?>"<?php endif; ?>>
         <?php if($rv):?><div class="rest-warn-icon">&#9888;</div><?php endif;?>
         <div class="cl"><?=h($label)?></div>
-        <?php if($showHoursInCell):?><div class="ch"><?=$cellH?>h</div><?php endif;?>
+        <?php if($showHoursInCell):?><div class="ch"><?=h($hoursRange)?></div><?php endif;?>
     </td>
     <?php endfor; ?>
 </tr>
@@ -573,10 +574,11 @@ function applyMulti(){
             td.classList.toggle('cell-wrap',(it.label||'').length>6);
             td.querySelector('.cl').textContent=it.label||'';
             const h=td.querySelector('.ch');
-            const showHours=['dyzur','wydarzenie'].includes((it.shift_type||'').toLowerCase()) && Number(it.hours||0)>0;
+            const showHours=['dyzur','wydarzenie'].includes((it.shift_type||'').toLowerCase()) && it.shift_start && it.shift_end;
+            const range=showHours ? (it.shift_start.slice(0,5)+'-'+it.shift_end.slice(0,5)) : '';
             if(showHours){
-                if(h) h.textContent=(it.hours+'h');
-                else { const n=document.createElement('div'); n.className='ch'; n.textContent=(it.hours+'h'); td.appendChild(n); }
+                if(h) h.textContent=range;
+                else { const n=document.createElement('div'); n.className='ch'; n.textContent=range; td.appendChild(n); }
             } else if(h) h.remove();
         });
         clearSelection();
