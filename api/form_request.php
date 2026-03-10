@@ -112,19 +112,33 @@ if ($action === 'approve') {
     }
 
     if ($req['form_type'] === 'overtime') {
-        // Parse total hours to deduct from form data
-        $sumText = $formData['Razem do odbioru'] ?? '';
-        preg_match('/[\d,.]+/', $sumText, $m);
-        $hours = $m ? (float)str_replace(',', '.', $m[0]) : 0;
-        if ($hours > 0) {
-            $stBal = $db->prepare('SELECT id, overtime_hours FROM leave_balances WHERE user_id=? AND year=?');
-            $stBal->execute([$req['user_id'], $currentYear]);
-            $bal = $stBal->fetch();
-            if ($bal) {
-                $newOt = max(0, (float)$bal['overtime_hours'] - $hours);
-                $db->prepare('UPDATE leave_balances SET overtime_hours=?, updated_at=NOW() WHERE id=?')
-                   ->execute([$newOt, $bal['id']]);
+        // Overtime request: mark requested days as "Wolne (W)" in schedule.
+        // Balance is adjusted per day by apply_wolne_overtime_balance_change():
+        // pn-czw = 8.5h, pt = 6h, and reverted automatically when Wolne is removed.
+        $daysRaw = (string)($formData['Dni do odbioru'] ?? '');
+        $days = array_filter(array_map('trim', explode(';', $daysRaw)));
+
+        foreach ($days as $dayItem) {
+            if (!preg_match('/(\d{2})\.(\d{2})\.(\d{4})/', $dayItem, $mDate)) {
+                continue;
             }
+            $date = sprintf('%04d-%02d-%02d', (int)$mDate[3], (int)$mDate[2], (int)$mDate[1]);
+
+            $stEntry = $db->prepare('SELECT id, shift_type FROM schedule_entries WHERE user_id=? AND entry_date=?');
+            $stEntry->execute([(int)$req['user_id'], $date]);
+            $entry = $stEntry->fetch();
+            $prevType = $entry['shift_type'] ?? null;
+
+            if ($entry) {
+                $db->prepare('UPDATE schedule_entries SET shift_type=?, shift_start=NULL, shift_end=NULL, note=?, updated_at=NOW() WHERE id=?')
+                   ->execute(['wolne', null, (int)$entry['id']]);
+            } else {
+                $db->prepare('INSERT INTO schedule_entries (user_id, entry_date, shift_type, shift_start, shift_end, note, created_at, updated_at) VALUES (?,?,?,?,?,?,NOW(),NOW())')
+                   ->execute([(int)$req['user_id'], $date, 'wolne', null, null, null]);
+            }
+
+            apply_wolne_overtime_balance_change((int)$req['user_id'], $date, $prevType, 'wolne');
+            create_or_replace_schedule_notification((int)$req['user_id'], 'wolne', $date, null, null, '');
         }
     }
 
