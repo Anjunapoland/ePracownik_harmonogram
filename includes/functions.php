@@ -555,10 +555,49 @@ function generate_request_pdf(array $req, string $approverName): string {
     $emp->execute([$req['user_id']]);
     $empName = (string)($emp->fetchColumn() ?: 'Nieznany');
 
-    $lines = [$title, 'Pracownik: ' . $empName, str_repeat('-', 88)];
+    $lines = [];
+    $lines[] = $title;
+    $lines[] = 'Pracownik: ' . $empName;
+    $lines[] = str_repeat('-', 82);
     foreach ($data as $k => $v) {
         if ($v === null || $v === '') continue;
         $lines[] = trim((string)$k) . ': ' . trim((string)$v);
+    }
+    $lines[] = str_repeat('-', 82);
+    $lines[] = 'ZAAKCEPTOWANY';
+    $lines[] = 'Zaakceptowal(a): ' . $approverName;
+    $lines[] = 'Data: ' . date('d.m.Y H:i');
+
+    $chunks = array_chunk($lines, 48);
+    $objects = [];
+    $objects[1] = "<< /Type /Catalog /Pages 2 0 R >>";
+
+    $pageObjectIds = [];
+    $contentObjectIds = [];
+    $fontObjectId = 3;
+    $nextObjectId = 4;
+
+    foreach ($chunks as $chunk) {
+        $stream = "BT
+/F1 10 Tf
+40 800 Td
+14 TL
+";
+        foreach ($chunk as $line) {
+            $stream .= '(' . request_pdf_safe_text($line) . ") Tj
+T*
+";
+        }
+        $stream .= "ET";
+
+        $contentId = $nextObjectId++;
+        $pageId = $nextObjectId++;
+        $contentObjectIds[] = $contentId;
+        $pageObjectIds[] = $pageId;
+        $objects[$contentId] = "<< /Length " . strlen($stream) . " >>
+stream
+" . $stream . "
+endstream";
     }
     $lines[] = str_repeat('-', 88);
     $lines[] = 'ZAAKCEPTOWANY';
@@ -590,95 +629,44 @@ function generate_request_pdf(array $req, string $approverName): string {
             $y += 20;
         }
 
-        $boxTop = min($h - 260, $y + 36);
-        imagefilledrectangle($im, 70, $boxTop, $w - 70, $boxTop + 150, $greenBg);
-        imagerectangle($im, 70, $boxTop, $w - 70, $boxTop + 150, $green);
-        imagestring($im, 5, 420, $boxTop + 18, 'ZAAKCEPTOWANY', $green);
-        imagestring($im, 4, 330, $boxTop + 58, request_pdf_safe_text('Zaakceptowal(a): ' . $approverName), $black);
-        imagestring($im, 4, 440, $boxTop + 90, request_pdf_safe_text('Data: ' . date('d.m.Y H:i')), $black);
+    $kids = implode(' ', array_map(static fn($id) => $id . ' 0 R', $pageObjectIds));
+    $objects[2] = "<< /Type /Pages /Kids [ {$kids} ] /Count " . count($pageObjectIds) . " >>";
+    $objects[$fontObjectId] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
 
-        ob_start();
-        imagejpeg($im, null, 88);
-        $jpeg = (string)ob_get_clean();
-        imagedestroy($im);
-
-        if ($jpeg !== '') {
-            $objects = [];
-            $objects[1] = "<< /Type /Catalog /Pages 2 0 R >>";
-            $objects[2] = "<< /Type /Pages /Kids [ 5 0 R ] /Count 1 >>";
-            $objects[3] = "<< /Type /XObject /Subtype /Image /Width {$w} /Height {$h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length " . strlen($jpeg) . " >>\nstream\n" . $jpeg . "\nendstream";
-            $stream = "q\n595 0 0 842 0 0 cm\n/Im1 Do\nQ";
-            $objects[4] = "<< /Length " . strlen($stream) . " >>\nstream\n" . $stream . "\nendstream";
-            $objects[5] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /XObject << /Im1 3 0 R >> >> /Contents 4 0 R >>";
-
-            ksort($objects);
-            $pdf = "%PDF-1.4\n";
-            $offsets = [0];
-            foreach ($objects as $id => $body) {
-                $offsets[$id] = strlen($pdf);
-                $pdf .= "{$id} 0 obj\n{$body}\nendobj\n";
-            }
-            $xrefOffset = strlen($pdf);
-            $maxId = max(array_keys($objects));
-            $pdf .= "xref\n0 " . ($maxId + 1) . "\n";
-            $pdf .= "0000000000 65535 f \n";
-            for ($i = 1; $i <= $maxId; $i++) {
-                $off = $offsets[$i] ?? 0;
-                $pdf .= sprintf("%010d 00000 n \n", $off);
-            }
-            $pdf .= "trailer\n<< /Size " . ($maxId + 1) . " /Root 1 0 R >>\nstartxref\n{$xrefOffset}\n%%EOF";
-        }
+    foreach ($pageObjectIds as $idx => $pageId) {
+        $contentId = $contentObjectIds[$idx];
+        $objects[$pageId] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 {$fontObjectId} 0 R >> >> /Contents {$contentId} 0 R >>";
     }
 
-    if ($pdf === '') {
-        $chunks = array_chunk($lines, 48);
-        $objects = [];
-        $objects[1] = "<< /Type /Catalog /Pages 2 0 R >>";
-        $fontObjectId = 3;
-        $nextObjectId = 4;
-        $contentIds = [];
-        $pageIds = [];
-
-        foreach ($chunks as $chunk) {
-            $stream = "BT\n/F1 10 Tf\n40 800 Td\n14 TL\n";
-            foreach ($chunk as $line) {
-                $stream .= '(' . request_pdf_safe_text($line) . ") Tj\nT*\n";
-            }
-            $stream .= "ET";
-
-            $contentId = $nextObjectId++;
-            $pageId = $nextObjectId++;
-            $contentIds[] = $contentId;
-            $pageIds[] = $pageId;
-            $objects[$contentId] = "<< /Length " . strlen($stream) . " >>\nstream\n" . $stream . "\nendstream";
-        }
-
-        $kids = implode(' ', array_map(static fn($id) => $id . ' 0 R', $pageIds));
-        $objects[2] = "<< /Type /Pages /Kids [ {$kids} ] /Count " . count($pageIds) . " >>";
-        $objects[$fontObjectId] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
-
-        foreach ($pageIds as $idx => $pageId) {
-            $contentId = $contentIds[$idx];
-            $objects[$pageId] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 {$fontObjectId} 0 R >> >> /Contents {$contentId} 0 R >>";
-        }
-
-        ksort($objects);
-        $pdf = "%PDF-1.4\n";
-        $offsets = [0];
-        foreach ($objects as $id => $body) {
-            $offsets[$id] = strlen($pdf);
-            $pdf .= "{$id} 0 obj\n{$body}\nendobj\n";
-        }
-        $xrefOffset = strlen($pdf);
-        $maxId = max(array_keys($objects));
-        $pdf .= "xref\n0 " . ($maxId + 1) . "\n";
-        $pdf .= "0000000000 65535 f \n";
-        for ($i = 1; $i <= $maxId; $i++) {
-            $off = $offsets[$i] ?? 0;
-            $pdf .= sprintf("%010d 00000 n \n", $off);
-        }
-        $pdf .= "trailer\n<< /Size " . ($maxId + 1) . " /Root 1 0 R >>\nstartxref\n{$xrefOffset}\n%%EOF";
+    ksort($objects);
+    $pdf = "%PDF-1.4
+";
+    $offsets = [0];
+    foreach ($objects as $id => $body) {
+        $offsets[$id] = strlen($pdf);
+        $pdf .= "{$id} 0 obj
+{$body}
+endobj
+";
     }
+
+    $xrefOffset = strlen($pdf);
+    $maxId = max(array_keys($objects));
+    $pdf .= "xref
+0 " . ($maxId + 1) . "
+";
+    $pdf .= "0000000000 65535 f 
+";
+    for ($i = 1; $i <= $maxId; $i++) {
+        $off = $offsets[$i] ?? 0;
+        $pdf .= sprintf("%010d 00000 n 
+", $off);
+    }
+    $pdf .= "trailer
+<< /Size " . ($maxId + 1) . " /Root 1 0 R >>
+startxref
+{$xrefOffset}
+%%EOF";
 
     $dir = __DIR__ . '/../storage/requests';
     if (!is_dir($dir)) mkdir($dir, 0755, true);
