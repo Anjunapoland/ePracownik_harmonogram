@@ -142,13 +142,33 @@ for ($d = 1; $d <= $dim; $d++) {
 
     $dayStart = $start;
     $dayEnd = $end;
-    if ($workPattern === 'sck' && !$isWeekend && !in_array($type, $noTimeTypes, true)) {
-        if ($dow >= 1 && $dow <= 4) {
-            $dayStart = '07:30';
-            $dayEnd = '16:00';
-        } elseif ($dow === 5) {
-            $dayStart = '07:30';
-            $dayEnd = '13:30';
+    if (!$isWeekend && !in_array($type, $noTimeTypes, true)) {
+        if ($workPattern === 'sck') {
+            if ($dow >= 1 && $dow <= 4) {
+                $dayStart = '07:30';
+                $dayEnd = '16:00';
+            } elseif ($dow === 5) {
+                $dayStart = '07:30';
+                $dayEnd = '13:30';
+            }
+        } elseif ($workPattern === '800_1630_1400') {
+            if ($dow >= 1 && $dow <= 4) {
+                $dayStart = '08:00';
+                $dayEnd = '16:30';
+            } elseif ($dow === 5) {
+                $dayStart = '08:00';
+                $dayEnd = '14:00';
+            }
+        } elseif ($workPattern === '800_1600') {
+            if ($dow >= 1 && $dow <= 5) {
+                $dayStart = '08:00';
+                $dayEnd = '16:00';
+            }
+        } elseif ($workPattern === '800_1500') {
+            if ($dow >= 1 && $dow <= 5) {
+                $dayStart = '08:00';
+                $dayEnd = '15:00';
+            }
         }
     }
 

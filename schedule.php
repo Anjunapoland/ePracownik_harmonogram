@@ -632,11 +632,18 @@ function bCalcH(){
     else d.style.display='none';
 }
 function bPatternChanged(){
-    const isSck=document.getElementById('bPattern').value==='sck';
-    document.getElementById('bS').disabled=isSck;
-    document.getElementById('bE').disabled=isSck;
+    const pattern=document.getElementById('bPattern').value;
+    const isAuto=pattern!=='custom';
+    document.getElementById('bS').disabled=isAuto;
+    document.getElementById('bE').disabled=isAuto;
     const n=document.getElementById('bPatternNote');
-    if(n)n.style.display=isSck?'block':'none';
+    if(n){
+        n.style.display=isAuto?'block':'none';
+        if(pattern==='sck') n.textContent='Szablon SCK: pn-czw 7:30-16:00, pt 7:30-13:30.';
+        else if(pattern==='800_1630_1400') n.textContent='Szablon: pn-czw 8:00-16:30, pt 8:00-14:00.';
+        else if(pattern==='800_1600') n.textContent='Szablon: pn-pt 8:00-16:00.';
+        else if(pattern==='800_1500') n.textContent='Szablon: pn-pt 8:00-15:00.';
+    }
 }
 function bulkSave(){
     const mode=document.getElementById('bMode').value;
@@ -870,9 +877,12 @@ function doAutoFill(){
         <label class="lbl">Szablon czasu pracy</label>
         <select id="bPattern" class="input" onchange="bPatternChanged()">
             <option value="sck">Domyślne godziny SCK (pn-czw 7:30-16:00, pt 7:30-13:30)</option>
+            <option value="800_1630_1400">pn-czw 8:00-16:30, pt 8:00-14:00</option>
+            <option value="800_1600">pn-pt 8:00-16:00</option>
+            <option value="800_1500">pn-pt 8:00-15:00</option>
             <option value="custom">Własne godziny (ręcznie ustaw start/koniec)</option>
         </select>
-        <div id="bPatternNote" class="bulk-info" style="margin-bottom:8px">Dla szablonu SCK godziny są ustawiane automatycznie dla każdego dnia roboczego.</div>
+        <div id="bPatternNote" class="bulk-info" style="margin-bottom:8px">Dla wybranego szablonu godziny są ustawiane automatycznie dla każdego dnia roboczego.</div>
         <div class="g2">
             <div><label class="lbl">Godzina od</label><input type="time" id="bS" class="input" oninput="bCalcH()"></div>
             <div><label class="lbl">Godzina do</label><input type="time" id="bE" class="input" oninput="bCalcH()"></div>
