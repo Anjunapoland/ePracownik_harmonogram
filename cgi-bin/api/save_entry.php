@@ -1,0 +1,66 @@
+<?php
+require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/functions.php';
+
+$u = current_user();
+if (!$u || $u['role']!=='admin') json_out(['error'=>'Brak uprawnień'], 403);
+if ($_SERVER['REQUEST_METHOD']!=='POST') json_out(['error'=>'POST only'], 405);
+if (empty($_POST['_token']) || !hash_equals($_SESSION['csrf']??'',$_POST['_token'])) json_out(['error'=>'CSRF'], 403);
+
+$uid  = (int)($_POST['user_id']??0);
+$date = $_POST['entry_date']??'';
+$type = $_POST['shift_type']??'standard';
+$start= $_POST['shift_start']??null;
+$end  = $_POST['shift_end']??null;
+$note = trim($_POST['note']??'');
+
+if (!$uid || !$date) json_out(['error'=>'Brak danych'], 400);
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) json_out(['error'=>'Zły format daty'], 400);
+if (!isset(get_shift_types()[$type])) $type = 'standard';
+// No-time types: force clear hours
+$noTimeCodes = ['urlop','urlop_na_zadanie','chorobowe','wolne','brak'];
+$stLabel = mb_strtolower(get_shift_types()[$type]['label'] ?? '');
+$isNoTime = in_array($type, $noTimeCodes) || strpos($stLabel,'urlop')!==false || strpos($stLabel,'chorobow')!==false;
+if ($isNoTime) { $start = null; $end = null; }
+if ($start && !preg_match('/^\d{2}:\d{2}$/', $start)) $start = null;
+if ($end   && !preg_match('/^\d{2}:\d{2}$/', $end))   $end   = null;
+
+$db = get_db();
+
+// Upsert: check if entry exists for this user+date
+$stmt = $db->prepare('SELECT id, shift_type FROM schedule_entries WHERE user_id=? AND entry_date=?');
+$stmt->execute([$uid, $date]);
+$existingRow = $stmt->fetch();
+$existing = $existingRow ? $existingRow['id'] : null;
+$prevType = $existingRow ? $existingRow['shift_type'] : null;
+
+if ($existing) {
+    $db->prepare('UPDATE schedule_entries SET shift_type=?, shift_start=?, shift_end=?, note=?, updated_at=NOW() WHERE id=?')
+       ->execute([$type, $start, $end, $note, $existing]);
+} else {
+    $db->prepare('INSERT INTO schedule_entries (user_id, entry_date, shift_type, shift_start, shift_end, note, created_at, updated_at) VALUES (?,?,?,?,?,?,NOW(),NOW())')
+       ->execute([$uid, $date, $type, $start, $end, $note]);
+}
+
+// Manage dyzur notifications
+if ($prevType === 'dyzur' && $type !== 'dyzur') {
+    // Was dyzur, now changed — remove old notification
+    $db->prepare("DELETE FROM notifications WHERE user_id=? AND type='dyzur' AND related_date=?")->execute([$uid, $date]);
+}
+
+if ($type === 'dyzur') {
+    // Remove previous notification for this date to avoid duplicates, then create fresh
+    $db->prepare("DELETE FROM notifications WHERE user_id=? AND type='dyzur' AND related_date=?")->execute([$uid, $date]);
+    $hrs = '';
+    if ($start && $end) $hrs = " ({$start}-{$end})";
+    create_notification(
+        $uid,
+        'dyzur',
+        'Przypisano dyzur',
+        "Administrator przypisal Ci dyzur na dzien {$date}{$hrs}." . ($note ? " Notatka: {$note}" : ''),
+        $date
+    );
+}
+
+$restWarnings = check_single_rest($uid, $date, $start, $end);
+json_out(['ok'=>true, 'rest_warnings'=>$restWarnings]);

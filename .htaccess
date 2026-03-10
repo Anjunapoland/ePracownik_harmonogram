@@ -1,0 +1,40 @@
+# ================================
+# harmonogram/.htaccess (SCALONY)
+# ================================
+
+# 1) Bez listowania katalogów
+Options -Indexes
+
+# 2) Blokuj pliki wrażliwe / backupy / środowiskowe
+<FilesMatch "\.(sql|sqlite|db|env|ini|log|bak|old|zip|tar|gz|7z|rar|md)$">
+  Require all denied
+</FilesMatch>
+
+# Blokuj pliki zaczynające się od kropki (np. .env, .config.php, .ht*)
+<FilesMatch "^\.">
+  Require all denied
+</FilesMatch>
+
+# 3) Blokuj repozytoria i metadane VCS (częsta wpadka przy deployu)
+RedirectMatch 403 /\.git
+RedirectMatch 403 /\.svn
+RedirectMatch 403 /\.hg
+
+# 4) (Opcjonalnie) Dodatkowe nagłówki bezpieczeństwa – jeśli mod_headers jest dostępny
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "SAMEORIGIN"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# 5) Ustawienia sesji PHP – tylko jeśli hosting pozwala na php_value w .htaccess
+# (Jeśli po wgraniu zobaczysz błąd 500, usuń tę sekcję i ustaw w panelu PHP lub w kodzie)
+<IfModule mod_php.c>
+  php_value session.cookie_httponly 1
+  php_value session.use_strict_mode 1
+</IfModule>
+
+# 6) (Opcjonalnie) Wymuś HTTPS – odkomentuj jeśli masz pewność, że SSL działa zawsze
+# RewriteEngine On
+# RewriteCond %{HTTPS} !=on
+# RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]

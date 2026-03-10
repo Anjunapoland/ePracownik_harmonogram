@@ -1,0 +1,15 @@
+Options -Indexes
+RewriteEngine On
+
+# Block sensitive files
+<FilesMatch "\.(sql|md|log)$">
+    Require all denied
+</FilesMatch>
+
+# Block install.php after setup (odkomentuj po instalacji)
+# <Files "install.php">
+#     Require all denied
+# </Files>
+
+php_value session.cookie_httponly 1
+php_value session.use_strict_mode 1
