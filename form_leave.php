@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/layout.php';
 $user = require_login();
+ensure_users_profile_columns();
 $formsVisible = get_setting('forms_visible', '1') === '1';
 if (!$formsVisible && !is_admin()) { header('Location: schedule.php'); exit; }
 
@@ -107,6 +108,10 @@ layout_start('Wniosek urlopowy');
             <input class="fg-input" type="text" id="ulName" value="<?=h($user['full_name'])?>" oninput="upd()">
         </div>
         <div>
+            <label class="fg-label">Stanowisko służbowe</label>
+            <input class="fg-input" type="text" id="ulPosition" value="<?=h($user['job_title'] ?? '')?>" oninput="upd()">
+        </div>
+        <div>
             <label class="fg-label">Data wniosku</label>
             <input class="fg-input" type="date" id="ulDate" value="<?=date('Y-m-d')?>" oninput="upd()">
         </div>
@@ -160,7 +165,7 @@ layout_start('Wniosek urlopowy');
                     <div class="fdoc-label">/Data/</div>
 
                     <div style="text-align:center;margin:20px 0 6px">
-                        <div class="fdoc-dots">................................</div>
+                        <div class="fdoc-field" id="docPos" style="min-width:220px"><?=h($user['job_title'] ?? '')?></div>
                     </div>
                     <div class="fdoc-label">/Stanowisko s&#322;u&#380;bowe/</div>
                 </div>
@@ -204,6 +209,7 @@ function fmtDate(v){if(!v)return '';var p=v.split('-');return p[2]+'.'+p[1]+'.'+
 function upd(){
     document.getElementById('docName').textContent=document.getElementById('ulName').value;
     document.getElementById('docDate').textContent=fmtDate(document.getElementById('ulDate').value);
+    document.getElementById('docPos').textContent=document.getElementById('ulPosition').value;
     document.getElementById('docYear').textContent=document.getElementById('ulYear').value;
     document.getElementById('docDays').textContent=document.getElementById('ulDays').value;
     document.getElementById('docFrom').textContent=fmtDate(document.getElementById('ulFrom').value);
@@ -220,6 +226,7 @@ function sendForm(){
     var data={
         'Imi\u0119 i nazwisko':n,
         'Data':fmtDate(document.getElementById('ulDate').value),
+        'Stanowisko służbowe':document.getElementById('ulPosition').value,
         'Za rok':document.getElementById('ulYear').value,
         'Liczba dni':document.getElementById('ulDays').value,
         'Od':fmtDate(document.getElementById('ulFrom').value),
