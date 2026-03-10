@@ -47,13 +47,19 @@ foreach ($srcEntries as $entry) {
 
     if ($existing && !$overwrite) continue;
 
+    $prevType = null;
     if ($existing) {
+        $prevStmt = $db->prepare('SELECT shift_type FROM schedule_entries WHERE id=?');
+        $prevStmt->execute([$existing]);
+        $prevType = $prevStmt->fetchColumn();
+
         $db->prepare('UPDATE schedule_entries SET shift_type=?, shift_start=?, shift_end=?, note=?, updated_at=NOW() WHERE id=?')
            ->execute([$entry['shift_type'], $entry['shift_start'], $entry['shift_end'], $entry['note'], $existing]);
     } else {
         $db->prepare('INSERT INTO schedule_entries (user_id, entry_date, shift_type, shift_start, shift_end, note, created_at, updated_at) VALUES (?,?,?,?,?,?,NOW(),NOW())')
            ->execute([$entry['user_id'], $dstDate, $entry['shift_type'], $entry['shift_start'], $entry['shift_end'], $entry['note']]);
     }
+    apply_wolne_overtime_balance_change((int)$entry['user_id'], $dstDate, $prevType !== false ? (string)$prevType : null, (string)$entry['shift_type']);
     $count++;
 }
 
