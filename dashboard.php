@@ -23,6 +23,23 @@ $stReq->execute([$user['id']]);
 $reqStats = ['pending'=>0,'approved'=>0,'rejected'=>0];
 foreach ($stReq->fetchAll() as $r) $reqStats[$r['status']] = (int)$r['cnt'];
 
+$pendingApprovals = 0;
+$pendingApprovalsPeople = [];
+if (is_admin()) {
+    $stPendingApprovals = $db->prepare("
+        SELECT fr.id, u.full_name
+        FROM form_requests fr
+        JOIN users u ON u.id = fr.user_id
+        JOIN form_approvers fa ON fa.employee_id = fr.user_id AND fa.approver_id = ?
+        WHERE fr.status = 'pending'
+        ORDER BY fr.created_at DESC
+    " );
+    $stPendingApprovals->execute([$user['id']]);
+    $pendingRows = $stPendingApprovals->fetchAll();
+    $pendingApprovals = count($pendingRows);
+    $pendingApprovalsPeople = array_values(array_unique(array_map(static function($r){ return (string)$r['full_name']; }, $pendingRows)));
+}
+
 // My duties this month
 $monthStart = sprintf('%04d-%02d-01', $currentYear, $currentMonth);
 $dim = cal_days_in_month(CAL_GREGORIAN, $currentMonth, $currentYear);
@@ -50,6 +67,11 @@ layout_start('Dashboard');
 .db-hello{font-size:28px;font-weight:900;color:#1c1917;letter-spacing:-.03em;margin-bottom:4px}
 .db-hello span{background:linear-gradient(135deg,#ea580c,#f97316,#fb923c);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
 .db-sub{font-size:13px;color:#a8a29e;margin-bottom:24px}
+.db-approvals-alert{margin:-8px 0 18px;padding:14px 16px;border-radius:14px;background:linear-gradient(135deg,#fff7ed,#ffedd5);border:1.5px solid #fdba74;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.db-approvals-alert-title{font-size:13px;font-weight:800;color:#9a3412;margin-bottom:4px}
+.db-approvals-alert-text{font-size:12px;color:#7c2d12;line-height:1.45}
+.db-approvals-alert-link{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:10px;background:#ea580c;color:#fff;text-decoration:none;font-size:12px;font-weight:700;white-space:nowrap}
+.db-approvals-alert-link:hover{background:#c2410c}
 
 .db-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 @media(max-width:700px){.db-grid{grid-template-columns:1fr}}
@@ -151,6 +173,21 @@ layout_start('Dashboard');
 <div class="db-wrap">
     <div class="db-hello">Cześć, <span><?=h(explode(' ',$user['full_name'])[0])?></span> 👋</div>
     <div class="db-sub"><?=$monthNames[$currentMonth]?> <?=$currentYear?> — Twój panel pracownika</div>
+
+    <?php if($pendingApprovals > 0): ?>
+    <div class="db-approvals-alert">
+        <div>
+            <div class="db-approvals-alert-title">⏳ Wnioski do rozpatrzenia</div>
+            <div class="db-approvals-alert-text">
+                Masz <strong><?=$pendingApprovals?></strong> oczekujących wniosków pracowników do akceptacji.
+                <?php if(!empty($pendingApprovalsPeople)): ?>
+                    Pracownicy: <?=h(implode(', ', array_slice($pendingApprovalsPeople, 0, 3)))?><?=count($pendingApprovalsPeople)>3?' i inni':''?>.
+                <?php endif; ?>
+            </div>
+        </div>
+        <a class="db-approvals-alert-link" href="requests.php">Przejdź do wniosków</a>
+    </div>
+    <?php endif; ?>
 
     <div class="db-grid">
         <!-- ── LEAVE & OVERTIME TILE ── -->

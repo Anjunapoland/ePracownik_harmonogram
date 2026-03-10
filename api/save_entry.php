@@ -45,6 +45,8 @@ if ($existing) {
        ->execute([$uid, $date, $type, $start, $end, $note]);
 }
 
+apply_wolne_overtime_balance_change($uid, $date, $prevType, $type);
+
 $changed = (
     !$existingRow ||
     (string)$prevType !== (string)$type ||
