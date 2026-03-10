@@ -2,6 +2,13 @@
 require_once __DIR__ . '/includes/layout.php';
 $user = require_login();
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'clear_notifications') {
+    verify_csrf();
+    clear_notifications((int) $user['id']);
+    header('Location: notifications.php?cleared=1');
+    exit;
+}
+
 mark_notifications_read($user['id']);
 $notifs = get_notifications($user['id'], 50);
 
@@ -44,6 +51,10 @@ layout_start('Powiadomienia');
 .ntf-title-icon{width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#ea580c,#f97316);display:flex;align-items:center;justify-content:center}
 .ntf-title-icon svg{width:20px;height:20px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .ntf-count{font-size:12px;font-weight:700;color:#78716c;background:#f5f5f4;padding:4px 12px;border-radius:99px}
+.ntf-header-actions{display:flex;align-items:center;gap:10px}
+.ntf-clear-form{margin:0}
+.ntf-clear-btn{border:1px solid #fed7aa;background:#fff7ed;color:#9a3412;font-size:12px;font-weight:700;padding:7px 12px;border-radius:10px;cursor:pointer;transition:all .2s}
+.ntf-clear-btn:hover{background:#ffedd5;border-color:#fdba74}
 
 /* Empty state */
 .ntf-empty{text-align:center;padding:64px 24px}
@@ -93,7 +104,14 @@ layout_start('Powiadomienia');
             Powiadomienia
         </div>
         <?php if(!empty($notifs)):?>
-        <div class="ntf-count"><?=count($notifs)?> powiadomie<?=count($notifs)==1?'nie':'n'?></div>
+        <div class="ntf-header-actions">
+            <div class="ntf-count"><?=count($notifs)?> powiadomie<?=count($notifs)==1?'nie':'n'?></div>
+            <form method="post" class="ntf-clear-form" onsubmit="return confirm('Na pewno usunąć wszystkie powiadomienia?');">
+                <?=csrf_field()?>
+                <input type="hidden" name="action" value="clear_notifications">
+                <button type="submit" class="ntf-clear-btn">Wyczyść wszystkie</button>
+            </form>
+        </div>
         <?php endif;?>
     </div>
 
