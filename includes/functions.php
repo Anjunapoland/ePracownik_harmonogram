@@ -38,6 +38,20 @@ function get_all_users(): array {
     return get_db()->query("SELECT * FROM users WHERE id > 0 ORDER BY role DESC, active DESC, full_name")->fetchAll();
 }
 
+
+function ensure_users_profile_columns(): void {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+
+    $db = get_db();
+    $stmt = $db->query("SHOW COLUMNS FROM users LIKE 'job_title'");
+    if (!$stmt->fetch()) {
+        $db->exec("ALTER TABLE users ADD COLUMN job_title VARCHAR(191) NOT NULL DEFAULT '' AFTER full_name");
+    }
+}
+
+
 function shift_label(string $t): string  { $st = get_shift_types(); return $st[$t]['label'] ?? $t; }
 function shift_color(string $t): string  { $st = get_shift_types(); return $st[$t]['color'] ?? '#fff'; }
 function shift_text(string $t): string   { $st = get_shift_types(); return $st[$t]['text']  ?? '#333'; }
