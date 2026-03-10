@@ -18,39 +18,43 @@ for ($i = 0; $i < 3; $i++) {
 $monthNames = ['','Styczeń','Luty','Marzec','Kwiecień','Maj','Czerwiec','Lipiec','Sierpień','Wrzesień','Październik','Listopad','Grudzień'];
 $dayNames = ['Nd','Pn','Wt','Śr','Cz','Pt','So'];
 
-function pdf_safe_text(string $text): string {
-    $ascii = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $text);
-    if ($ascii === false) {
-        $ascii = $text;
+function pick_pdf_font_path(string $weight = 'regular'): ?string {
+    $candidates = $weight === 'bold'
+        ? ['/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', '/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf']
+        : ['/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', '/usr/share/fonts/dejavu/DejaVuSans.ttf'];
+
+    foreach ($candidates as $font) {
+        if (is_file($font)) return $font;
     }
-    return str_replace(["\\", "(", ")"], ["\\\\", "\\(", "\\)"], $ascii);
+    return null;
 }
 
-function build_simple_pdf(array $pages): string {
+function build_pdf_from_jpegs(array $images, int $imgWidth, int $imgHeight): string {
     $objects = [];
     $objects[1] = "<< /Type /Catalog /Pages 2 0 R >>";
 
-    $pageObjectIds = [];
-    $contentObjectIds = [];
-    $fontObjectId = 3;
-    $nextObjectId = 4;
+    $pageIds = [];
+    $contentIds = [];
+    $imageIds = [];
+    $nextId = 3;
 
-    foreach ($pages as $stream) {
-        $contentId = $nextObjectId++;
-        $pageId = $nextObjectId++;
-        $contentObjectIds[] = $contentId;
-        $pageObjectIds[] = $pageId;
+    foreach ($images as $jpeg) {
+        $imageId = $nextId++;
+        $contentId = $nextId++;
+        $pageId = $nextId++;
+
+        $imageIds[] = $imageId;
+        $contentIds[] = $contentId;
+        $pageIds[] = $pageId;
+
+        $objects[$imageId] = "<< /Type /XObject /Subtype /Image /Width {$imgWidth} /Height {$imgHeight} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length " . strlen($jpeg) . " >>\nstream\n" . $jpeg . "\nendstream";
+        $stream = "q\n595 0 0 842 0 0 cm\n/Im" . $imageId . " Do\nQ";
         $objects[$contentId] = "<< /Length " . strlen($stream) . " >>\nstream\n" . $stream . "\nendstream";
+        $objects[$pageId] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /XObject << /Im" . $imageId . " " . $imageId . " 0 R >> >> /Contents " . $contentId . " 0 R >>";
     }
 
-    $kids = implode(' ', array_map(static fn($id) => $id . ' 0 R', $pageObjectIds));
-    $objects[2] = "<< /Type /Pages /Kids [ {$kids} ] /Count " . count($pageObjectIds) . " >>";
-    $objects[$fontObjectId] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
-
-    foreach ($pageObjectIds as $idx => $pageId) {
-        $contentId = $contentObjectIds[$idx];
-        $objects[$pageId] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 {$fontObjectId} 0 R >> >> /Contents {$contentId} 0 R >>";
-    }
+    $kids = implode(' ', array_map(static fn($id) => $id . ' 0 R', $pageIds));
+    $objects[2] = "<< /Type /Pages /Kids [ {$kids} ] /Count " . count($pageIds) . " >>";
 
     ksort($objects);
     $pdf = "%PDF-1.4\n";
@@ -110,46 +114,120 @@ foreach ($months as $mp) {
 }
 
 if (($_GET['download'] ?? '') === 'pdf') {
-    $lines = [
-        'Rozliczenie kina - podsumowanie (ostatnie 3 miesiace)',
-        'Wygenerowano: ' . date('d.m.Y H:i'),
-        ''
-    ];
+    $fontRegular = pick_pdf_font_path('regular');
+    $fontBold = pick_pdf_font_path('bold') ?? $fontRegular;
+
+    if (!$fontRegular || !$fontBold || !function_exists('imagecreatetruecolor') || !function_exists('imagettftext')) {
+        http_response_code(500);
+        die('Brak wymaganych komponentów do generowania PDF.');
+    }
+
+    $pageW = 1240;
+    $pageH = 1754;
+    $margin = 64;
+    $cursorY = 0;
+    $images = [];
+
+    $newPage = static function () use ($pageW, $pageH, &$cursorY) {
+        $img = imagecreatetruecolor($pageW, $pageH);
+        imageantialias($img, true);
+        $white = imagecolorallocate($img, 255, 255, 255);
+        imagefill($img, 0, 0, $white);
+        $cursorY = 110;
+        return $img;
+    };
+
+    $img = $newPage();
+
+    $cText = imagecolorallocate($img, 28, 25, 23);
+    $cMuted = imagecolorallocate($img, 120, 113, 108);
+    $cPrimary = imagecolorallocate($img, 124, 58, 237);
+    $cSoft = imagecolorallocate($img, 245, 243, 255);
+    $cBorder = imagecolorallocate($img, 232, 232, 235);
+
+    $flushPage = static function ($img) use (&$images) {
+        ob_start();
+        imagejpeg($img, null, 90);
+        $images[] = ob_get_clean();
+        imagedestroy($img);
+    };
+
+    imagettftext($img, 38, 0, $margin, 90, $cPrimary, $fontBold, 'Rozliczenie kina');
+    imagettftext($img, 16, 0, $margin, 124, $cMuted, $fontRegular, 'Podsumowanie zmian Kino — ostatnie 3 miesiące');
+    imagettftext($img, 14, 0, $pageW - 360, 124, $cMuted, $fontRegular, 'Wygenerowano: ' . date('d.m.Y H:i'));
+
+    $cursorY = 170;
 
     foreach ($allKino as $mk) {
-        $monthTotalHours = array_sum(array_column($mk['employees'], 'total_hours'));
-        $lines[] = $mk['label'] . ' | pracownicy: ' . count($mk['employees']) . ' | zmiany: ' . $mk['total_entries'] . ' | godziny: ' . $monthTotalHours;
+        $employeesCount = count($mk['employees']);
+        $totalHours = (int)array_sum(array_column($mk['employees'], 'total_hours'));
+
+        $required = 70 + max(1, $employeesCount) * 44;
+        if ($cursorY + $required > $pageH - 80) {
+            $flushPage($img);
+            $img = $newPage();
+            $cText = imagecolorallocate($img, 28, 25, 23);
+            $cMuted = imagecolorallocate($img, 120, 113, 108);
+            $cPrimary = imagecolorallocate($img, 124, 58, 237);
+            $cSoft = imagecolorallocate($img, 245, 243, 255);
+            $cBorder = imagecolorallocate($img, 232, 232, 235);
+        }
+
+        imagefilledrectangle($img, $margin, $cursorY - 18, $pageW - $margin, $cursorY + 28, $cSoft);
+        imagettftext($img, 18, 0, $margin + 16, $cursorY + 10, $cPrimary, $fontBold, $mk['label']);
+        imagettftext($img, 13, 0, $margin + 260, $cursorY + 10, $cMuted, $fontRegular, $employeesCount . ' pracowników | ' . $mk['total_entries'] . ' zmian | ' . $totalHours . ' godz.');
+        $cursorY += 56;
+
         if (empty($mk['employees'])) {
-            $lines[] = '  - Brak zmian kinowych';
-            $lines[] = '';
+            imagettftext($img, 13, 0, $margin + 10, $cursorY + 6, $cMuted, $fontRegular, 'Brak zmian kinowych');
+            $cursorY += 34;
             continue;
         }
 
         foreach ($mk['employees'] as $emp) {
-            $lines[] = '  * ' . $emp['name'] . ' (' . $emp['dept'] . ') - ' . $emp['total_hours'] . ' godz., ' . count($emp['days']) . ' zmian';
+            if ($cursorY + 38 > $pageH - 80) {
+                $flushPage($img);
+                $img = $newPage();
+                $cText = imagecolorallocate($img, 28, 25, 23);
+                $cMuted = imagecolorallocate($img, 120, 113, 108);
+                $cPrimary = imagecolorallocate($img, 124, 58, 237);
+                $cSoft = imagecolorallocate($img, 245, 243, 255);
+                $cBorder = imagecolorallocate($img, 232, 232, 235);
+            }
+
+            imagerectangle($img, $margin, $cursorY - 18, $pageW - $margin, $cursorY + 16, $cBorder);
+            imagettftext($img, 13, 0, $margin + 10, $cursorY + 2, $cText, $fontBold, $emp['name'] . ' (' . $emp['dept'] . ')');
+            imagettftext($img, 12, 0, $pageW - 360, $cursorY + 2, $cPrimary, $fontRegular, $emp['total_hours'] . ' godz. | ' . count($emp['days']) . ' zmian');
+            $cursorY += 36;
+
             foreach ($emp['days'] as $di => $day) {
+                if ($cursorY + 28 > $pageH - 80) {
+                    $flushPage($img);
+                    $img = $newPage();
+                    $cText = imagecolorallocate($img, 28, 25, 23);
+                    $cMuted = imagecolorallocate($img, 120, 113, 108);
+                    $cPrimary = imagecolorallocate($img, 124, 58, 237);
+                    $cSoft = imagecolorallocate($img, 245, 243, 255);
+                    $cBorder = imagecolorallocate($img, 232, 232, 235);
+                }
+
                 $dt = strtotime($day['date']);
                 $dow = $dayNames[(int)date('w', $dt)];
-                $hours = $day['start'] && $day['end'] ? short_time($day['start']) . '-' . short_time($day['end']) : 'nieustalone';
-                $lines[] = '      ' . ($di + 1) . '. ' . date('d.m.Y', $dt) . ' (' . $dow . ') | ' . $hours . ' | ' . $day['hours'] . 'h';
+                $hours = $day['start'] && $day['end'] ? short_time($day['start']) . ' - ' . short_time($day['end']) : 'nieustalone';
+                $line = ($di + 1) . '. ' . date('d.m.Y', $dt) . ' (' . $dow . ') | ' . $hours . ' | ' . $day['hours'] . 'h';
+                imagettftext($img, 12, 0, $margin + 24, $cursorY + 2, $cMuted, $fontRegular, $line);
+                $cursorY += 24;
             }
+
+            $cursorY += 10;
         }
-        $lines[] = '';
+
+        $cursorY += 6;
     }
 
-    $maxLinesPerPage = 48;
-    $chunks = array_chunk($lines, $maxLinesPerPage);
-    $pages = [];
-    foreach ($chunks as $chunk) {
-        $stream = "BT\n/F1 10 Tf\n40 800 Td\n14 TL\n";
-        foreach ($chunk as $line) {
-            $stream .= '(' . pdf_safe_text($line) . ") Tj\nT*\n";
-        }
-        $stream .= "ET";
-        $pages[] = $stream;
-    }
+    $flushPage($img);
 
-    $pdf = build_simple_pdf($pages);
+    $pdf = build_pdf_from_jpegs($images, $pageW, $pageH);
     $filename = 'rozliczenie_kina_' . date('Ymd_His') . '.pdf';
 
     header('Content-Type: application/pdf');
