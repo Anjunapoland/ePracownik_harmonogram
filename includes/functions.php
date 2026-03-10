@@ -239,6 +239,10 @@ function mark_notifications_read(int $userId): void {
     get_db()->prepare('UPDATE notifications SET is_read=1 WHERE user_id=? AND is_read=0')->execute([$userId]);
 }
 
+function clear_notifications(int $userId): void {
+    get_db()->prepare('DELETE FROM notifications WHERE user_id=?')->execute([$userId]);
+}
+
 // ---- Dyżury ----
 
 function get_user_dyzury(int $userId, int $limit = 10): array {
@@ -590,6 +594,61 @@ stream
 " . $stream . "
 endstream";
     }
+    $lines[] = str_repeat('-', 90);
+    $lines[] = 'ZAAKCEPTOWANY';
+    $lines[] = 'Zaakceptował(a): ' . $approverName;
+    $lines[] = 'Data: ' . date('d.m.Y H:i');
+
+    $stream = "BT
+/F1 11 Tf
+40 800 Td
+15 TL
+";
+    foreach ($lines as $line) {
+        $stream .= '(' . request_pdf_safe_text($line) . ") Tj
+T*
+";
+    }
+    $stream .= "ET";
+
+    $objects = [];
+    $objects[1] = "<< /Type /Catalog /Pages 2 0 R >>";
+    $objects[2] = "<< /Type /Pages /Kids [ 4 0 R ] /Count 1 >>";
+    $objects[3] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
+    $objects[4] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>";
+    $objects[5] = "<< /Length " . strlen($stream) . " >>
+stream
+" . $stream . "
+endstream";
+
+    ksort($objects);
+    $pdf = "%PDF-1.4
+";
+    $offsets = [0];
+    foreach ($objects as $id => $body) {
+        $offsets[$id] = strlen($pdf);
+        $pdf .= "{$id} 0 obj
+{$body}
+endobj
+";
+    }
+    $xrefOffset = strlen($pdf);
+    $maxId = max(array_keys($objects));
+    $pdf .= "xref
+0 " . ($maxId + 1) . "
+";
+    $pdf .= "0000000000 65535 f 
+";
+    for ($i = 1; $i <= $maxId; $i++) {
+        $off = $offsets[$i] ?? 0;
+        $pdf .= sprintf("%010d 00000 n 
+", $off);
+    }
+    $pdf .= "trailer
+<< /Size " . ($maxId + 1) . " /Root 1 0 R >>
+startxref
+{$xrefOffset}
+%%EOF";
 
     $kids = implode(' ', array_map(static fn($id) => $id . ' 0 R', $pageIds));
     $objects[2] = "<< /Type /Pages /Kids [ {$kids} ] /Count " . count($pageIds) . " >>";
