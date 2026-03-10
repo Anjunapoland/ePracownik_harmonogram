@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS `users` (
     `email` VARCHAR(191) NOT NULL,
     `password` VARCHAR(255) NOT NULL DEFAULT '',
     `full_name` VARCHAR(191) NOT NULL,
+    `job_title` VARCHAR(191) NOT NULL DEFAULT '',
     `department` VARCHAR(100) NOT NULL DEFAULT 'SCK',
     `employment_fraction` DECIMAL(3,2) NOT NULL DEFAULT 1.00,
     `role` ENUM('admin','employee') NOT NULL DEFAULT 'employee',
@@ -125,10 +126,10 @@ SET FOREIGN_KEY_CHECKS = 1;
 -- Albo po prostu użyj install.php — zrobi to za Ciebie.
 -- ----------------------------
 
-INSERT INTO `users` (`email`, `password`, `full_name`, `department`, `employment_fraction`, `role`, `active`, `must_change_password`)
+INSERT INTO `users` (`email`, `password`, `full_name`, `job_title`, `department`, `employment_fraction`, `role`, `active`, `must_change_password`)
 VALUES
-    ('admin@sck.strzegom.pl',    '__HASH_ADMIN123__',  'Administrator HR', 'Kadry', 1.00, 'admin',    1, 0),
-    ('employee@sck.strzegom.pl', '__HASH_TEST123__',   'Bereta Ewa',       'SCK',   1.00, 'employee', 1, 0)
+    ('admin@sck.strzegom.pl',    '__HASH_ADMIN123__',  'Administrator HR', '', 'Kadry', 1.00, 'admin',    1, 0),
+    ('employee@sck.strzegom.pl', '__HASH_TEST123__',   'Bereta Ewa',       '', 'SCK',   1.00, 'employee', 1, 0)
 ON DUPLICATE KEY UPDATE id=id;
 
 -- Po wygenerowaniu hashy w tools/hash.php:
