@@ -85,6 +85,7 @@ if ($action === 'selected_cells') {
             elseif ($isNoTime) $label = $stTypes[$type]['label'] ?? $type;
             elseif ($type === 'swieto') $label = $note ? mb_substr($note,0,16) : 'Święto';
             elseif ($type === 'dyzur') $label = 'Dyżur';
+            elseif ($type === 'standard' && $start && $end) $label = short_time($start).'-'.short_time($end);
             else $label = $stTypes[$type]['label'] ?? shift_label($type);
 
             $updated[] = [

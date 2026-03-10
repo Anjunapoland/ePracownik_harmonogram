@@ -321,6 +321,7 @@ foreach($employees as $idx=>$emp):
             elseif($st==='wydarzenie') $label=$eventDisplay?:'Wydarzenie';
             elseif($st==='swieto') $label='Święto';
             elseif($st==='dyzur') $label='Dyżur';
+            elseif($st==='standard' && $eStart && $eEnd) $label=short_time($eStart).'-'.short_time($eEnd);
             else $label=$stLabelFull;
 
             $cellH=$noTime?0:calc_hours($eStart,$eEnd);
