@@ -18,14 +18,42 @@ for ($i = 0; $i < 3; $i++) {
 $monthNames = ['','Styczeń','Luty','Marzec','Kwiecień','Maj','Czerwiec','Lipiec','Sierpień','Wrzesień','Październik','Listopad','Grudzień'];
 $dayNames = ['Nd','Pn','Wt','Śr','Cz','Pt','So'];
 
+function ensure_local_pdf_font(string $weight = 'regular'): ?string {
+    $base64Path = $weight === 'bold'
+        ? __DIR__ . '/assets/fonts/DejaVuSans-Bold.ttf.base64'
+        : __DIR__ . '/assets/fonts/DejaVuSans.ttf.base64';
+
+    if (!is_file($base64Path)) return null;
+
+    $cacheDir = __DIR__ . '/storage/fonts';
+    if (!is_dir($cacheDir) && !mkdir($cacheDir, 0755, true) && !is_dir($cacheDir)) {
+        return null;
+    }
+
+    $target = $weight === 'bold' ? $cacheDir . '/DejaVuSans-Bold.ttf' : $cacheDir . '/DejaVuSans.ttf';
+    if (!is_file($target) || filesize($target) < 1000) {
+        $encoded = file_get_contents($base64Path);
+        if ($encoded === false) return null;
+        $decoded = base64_decode(preg_replace('/\s+/', '', $encoded), true);
+        if ($decoded === false) return null;
+        if (file_put_contents($target, $decoded, LOCK_EX) === false) return null;
+    }
+
+    return is_file($target) ? $target : null;
+}
+
 function pick_pdf_font_path(string $weight = 'regular'): ?string {
-    $candidates = $weight === 'bold'
+    $local = ensure_local_pdf_font($weight);
+    if ($local) return $local;
+
+    $systemFonts = $weight === 'bold'
         ? ['/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', '/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf']
         : ['/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', '/usr/share/fonts/dejavu/DejaVuSans.ttf'];
 
-    foreach ($candidates as $font) {
+    foreach ($systemFonts as $font) {
         if (is_file($font)) return $font;
     }
+
     return null;
 }
 
