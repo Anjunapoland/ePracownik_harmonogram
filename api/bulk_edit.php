@@ -70,7 +70,7 @@ if ($action === 'selected_cells') {
             $stLabel = mb_strtolower($stTypes[$type]['label'] ?? '');
             $isNoTime = in_array($type, $noTimeTypes, true) || strpos($stLabel,'urlop')!==false || strpos($stLabel,'chorobow')!==false;
             $tooltipNote = $note;
-            if ($type === 'wolne') $label = 'WK';
+            if ($type === 'wolne') $label = 'Wolne (W)';
             elseif ($type === 'brak') $label = 'WZ';
             elseif ($type === 'wydarzenie') {
                 if (strpos($note, '||') !== false) {

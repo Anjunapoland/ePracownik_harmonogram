@@ -316,7 +316,7 @@ foreach($employees as $idx=>$emp):
                 }
             }
 
-            if($st==='wolne') $label='WK';
+            if($st==='wolne') $label='Wolne (W)';
             elseif($st==='brak') $label='WZ';
             elseif($st==='wydarzenie') $label=$eventDisplay?:'Wydarzenie';
             elseif($st==='swieto') $label='Święto';
@@ -330,7 +330,13 @@ foreach($employees as $idx=>$emp):
             if ($cellH > 0) $ttLines[] = 'Suma: '.$cellH.'h';
             $noteToShow = $st==='wydarzenie' ? $eventNote : trim((string)($e['note'] ?? ''));
             if ($noteToShow !== '') $ttLines[] = 'Notatka: '.$noteToShow;
-            $tooltip = implode("&#10;", array_map('h', $ttLines));
+            $tooltip = implode("\n", $ttLines);
+        }
+        $cellTip = '';
+        if ($rv) {
+            $cellTip = "⚠ Przerwa {$rv['gap']}h (min. 11h)\nPoprzednia zmiana: do {$rv['prev_end']}\nTa zmiana: od {$rv['next_start']}\nArt. 132 Kodeksu pracy";
+        } elseif ($tooltip) {
+            $cellTip = $tooltip;
         }
         $da='';
         if(is_admin()){
@@ -343,8 +349,7 @@ foreach($employees as $idx=>$emp):
         style="background:<?=$bg?>;color:<?=$fg?>"
         <?=$da?>
         <?=is_admin()?'onclick="sc(this,event)" ondblclick="oe(this)"':''?>
-        <?php if($rv): ?>title="&#9888; Przerwa <?=$rv['gap']?>h (min. 11h) &#10;Poprzednia zmiana: do <?=$rv['prev_end']?> &#10;Ta zmiana: od <?=$rv['next_start']?> &#10;Art. 132 Kodeksu pracy"
-        <?php elseif($tooltip): ?>title="<?=$tooltip?>"<?php endif; ?>>
+        <?php if($cellTip): ?>data-tip="<?=h($cellTip)?>"<?php endif; ?>>
         <?php if($rv):?><div class="rest-warn-icon">&#9888;</div><?php endif;?>
         <div class="cl"><?=h($label)?></div>
     </td>
@@ -559,7 +564,9 @@ function applyMulti(){
             td.dataset.eid=it.id||'';
             td.style.background=it.color;
             td.style.color=it.text;
-            td.title=buildCellTooltip(it.shift_type,it.label,it.shift_start,it.shift_end,it.hours,it.tooltip_note||it.note||'');
+            const tip=buildCellTooltip(it.shift_type,it.label,it.shift_start,it.shift_end,it.hours,it.tooltip_note||it.note||'');
+            td.dataset.tip=tip;
+            if(!tip) td.removeAttribute('data-tip');
             td.classList.toggle('cell-dyzur',it.shift_type==='dyzur');
             td.classList.toggle('cell-wrap',(it.label||'').length>6);
             td.querySelector('.cl').textContent=it.label||'';
@@ -1026,5 +1033,39 @@ function doAutoFill(){
     el.addEventListener('click',e=>{if(mv){e.stopPropagation();mv=0;}},true);
 })();
 </script>
+
+
+<script>
+(function(){
+  const tip=document.createElement('div');
+  tip.id='cellTipBox';
+  tip.style.cssText='position:fixed;z-index:9999;pointer-events:none;max-width:320px;background:linear-gradient(180deg,#111827,#1f2937);color:#fff;padding:10px 12px;border-radius:10px;font-size:12px;line-height:1.45;white-space:pre-line;box-shadow:0 10px 24px rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.12);opacity:0;transform:translateY(4px);transition:opacity .12s ease,transform .12s ease';
+  document.body.appendChild(tip);
+  let active=null;
+  function show(el,e){
+    const txt=el.getAttribute('data-tip');
+    if(!txt)return;
+    active=el;
+    tip.textContent=txt;
+    tip.style.opacity='1'; tip.style.transform='translateY(0)';
+    move(e);
+  }
+  function hide(){active=null;tip.style.opacity='0';tip.style.transform='translateY(4px)';}
+  function move(e){
+    if(!active)return;
+    const pad=14;
+    let x=e.clientX+16,y=e.clientY+16;
+    const r=tip.getBoundingClientRect();
+    if(x+r.width>window.innerWidth-pad)x=window.innerWidth-r.width-pad;
+    if(y+r.height>window.innerHeight-pad)y=e.clientY-r.height-14;
+    tip.style.left=x+'px';tip.style.top=y+'px';
+  }
+  document.addEventListener('mouseover',e=>{const c=e.target.closest('.cell[data-tip]');if(c)show(c,e);});
+  document.addEventListener('mousemove',move);
+  document.addEventListener('mouseout',e=>{if(active && !e.relatedTarget?.closest('.cell[data-tip]')) hide();});
+  document.addEventListener('scroll',()=>{if(active)hide();},true);
+})();
+</script>
+
 
 <?php layout_end(); ?>
