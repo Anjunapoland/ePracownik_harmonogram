@@ -147,6 +147,10 @@ function mark_notifications_read(int $userId): void {
     get_db()->prepare('UPDATE notifications SET is_read=1 WHERE user_id=? AND is_read=0')->execute([$userId]);
 }
 
+function clear_notifications(int $userId): void {
+    get_db()->prepare('DELETE FROM notifications WHERE user_id=?')->execute([$userId]);
+}
+
 // ---- Dyżury ----
 
 function get_user_dyzury(int $userId, int $limit = 10): array {
