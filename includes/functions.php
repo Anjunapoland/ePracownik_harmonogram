@@ -533,14 +533,11 @@ function request_pdf_escape(string $text): string {
 }
 
 function request_pdf_safe_text(string $text): string {
-    $latin = @iconv('UTF-8', 'Windows-1250//TRANSLIT//IGNORE', $text);
-    if ($latin === false) {
-        $latin = @iconv('UTF-8', 'ISO-8859-2//TRANSLIT//IGNORE', $text);
+    $ascii = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $text);
+    if ($ascii === false || $ascii === '') {
+        $ascii = preg_replace('/[^ -~]/', '', $text) ?? '';
     }
-    if ($latin === false) {
-        $latin = $text;
-    }
-    return request_pdf_escape($latin);
+    return request_pdf_escape($ascii);
 }
 
 function generate_request_pdf(array $req, string $approverName): string {
@@ -594,61 +591,6 @@ stream
 " . $stream . "
 endstream";
     }
-    $lines[] = str_repeat('-', 90);
-    $lines[] = 'ZAAKCEPTOWANY';
-    $lines[] = 'Zaakceptował(a): ' . $approverName;
-    $lines[] = 'Data: ' . date('d.m.Y H:i');
-
-    $stream = "BT
-/F1 11 Tf
-40 800 Td
-15 TL
-";
-    foreach ($lines as $line) {
-        $stream .= '(' . request_pdf_safe_text($line) . ") Tj
-T*
-";
-    }
-    $stream .= "ET";
-
-    $objects = [];
-    $objects[1] = "<< /Type /Catalog /Pages 2 0 R >>";
-    $objects[2] = "<< /Type /Pages /Kids [ 4 0 R ] /Count 1 >>";
-    $objects[3] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
-    $objects[4] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>";
-    $objects[5] = "<< /Length " . strlen($stream) . " >>
-stream
-" . $stream . "
-endstream";
-
-    ksort($objects);
-    $pdf = "%PDF-1.4
-";
-    $offsets = [0];
-    foreach ($objects as $id => $body) {
-        $offsets[$id] = strlen($pdf);
-        $pdf .= "{$id} 0 obj
-{$body}
-endobj
-";
-    }
-    $xrefOffset = strlen($pdf);
-    $maxId = max(array_keys($objects));
-    $pdf .= "xref
-0 " . ($maxId + 1) . "
-";
-    $pdf .= "0000000000 65535 f 
-";
-    for ($i = 1; $i <= $maxId; $i++) {
-        $off = $offsets[$i] ?? 0;
-        $pdf .= sprintf("%010d 00000 n 
-", $off);
-    }
-    $pdf .= "trailer
-<< /Size " . ($maxId + 1) . " /Root 1 0 R >>
-startxref
-{$xrefOffset}
-%%EOF";
 
     $kids = implode(' ', array_map(static fn($id) => $id . ' 0 R', $pageIds));
     $objects[2] = "<< /Type /Pages /Kids [ {$kids} ] /Count " . count($pageIds) . " >>";
