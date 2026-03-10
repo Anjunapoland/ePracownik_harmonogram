@@ -54,6 +54,8 @@ if ($action === 'selected_cells') {
                 $id = (int)$db->lastInsertId();
             }
 
+            apply_wolne_overtime_balance_change($uid, $date, $existingRow['shift_type'] ?? null, $type);
+
             $changed = (
                 !$existingRow ||
                 (string)($existingRow['shift_type'] ?? '') !== (string)$type ||
@@ -69,12 +71,24 @@ if ($action === 'selected_cells') {
             $stTypes = get_shift_types();
             $stLabel = mb_strtolower($stTypes[$type]['label'] ?? '');
             $isNoTime = in_array($type, $noTimeTypes, true) || strpos($stLabel,'urlop')!==false || strpos($stLabel,'chorobow')!==false;
-            if ($type === 'wolne') $label = 'W';
-            elseif ($type === 'brak') $label = 'X';
+            $tooltipNote = $note;
+            if ($type === 'wolne') $label = 'Wolne (W)';
+            elseif ($type === 'brak') $label = 'WZ';
+            elseif ($type === 'wydarzenie') {
+                if (strpos($note, '||') !== false) {
+                    [$eventLabel, $eventNote] = array_pad(array_map('trim', explode('||', $note, 2)), 2, '');
+                    $label = $eventLabel !== '' ? $eventLabel : 'Wydarzenie';
+                    $tooltipNote = $eventNote;
+                } else {
+                    $label = trim($note) !== '' ? trim($note) : 'Wydarzenie';
+                    $tooltipNote = '';
+                }
+            }
             elseif ($isNoTime) $label = $stTypes[$type]['label'] ?? $type;
-            elseif ($type === 'swieto') $label = $note ? mb_substr($note,0,8) : 'Święto';
-            elseif ($type === 'dyzur') $label = ($start && $end) ? short_time($start).'-'.short_time($end) : 'DYŻUR';
-            else $label = ($start && $end) ? short_time($start).'-'.short_time($end) : mb_substr(shift_label($type),0,6);
+            elseif ($type === 'swieto') $label = $note ? mb_substr($note,0,16) : 'Święto';
+            elseif ($type === 'dyzur') $label = 'Dyżur';
+            elseif ($type === 'standard' && $start && $end) $label = short_time($start).'-'.short_time($end);
+            else $label = $stTypes[$type]['label'] ?? shift_label($type);
 
             $updated[] = [
                 'id' => $id,
@@ -84,6 +98,7 @@ if ($action === 'selected_cells') {
                 'shift_start' => $start,
                 'shift_end' => $end,
                 'note' => $note,
+                'tooltip_note' => $tooltipNote,
                 'label' => $label,
                 'hours' => calc_hours($start, $end),
                 'color' => shift_color($type),
@@ -129,13 +144,33 @@ for ($d = 1; $d <= $dim; $d++) {
 
     $dayStart = $start;
     $dayEnd = $end;
-    if ($workPattern === 'sck' && !$isWeekend && !in_array($type, $noTimeTypes, true)) {
-        if ($dow >= 1 && $dow <= 4) {
-            $dayStart = '07:30';
-            $dayEnd = '16:00';
-        } elseif ($dow === 5) {
-            $dayStart = '07:30';
-            $dayEnd = '13:30';
+    if (!$isWeekend && !in_array($type, $noTimeTypes, true)) {
+        if ($workPattern === 'sck') {
+            if ($dow >= 1 && $dow <= 4) {
+                $dayStart = '07:30';
+                $dayEnd = '16:00';
+            } elseif ($dow === 5) {
+                $dayStart = '07:30';
+                $dayEnd = '13:30';
+            }
+        } elseif ($workPattern === '800_1630_1400') {
+            if ($dow >= 1 && $dow <= 4) {
+                $dayStart = '08:00';
+                $dayEnd = '16:30';
+            } elseif ($dow === 5) {
+                $dayStart = '08:00';
+                $dayEnd = '14:00';
+            }
+        } elseif ($workPattern === '800_1600') {
+            if ($dow >= 1 && $dow <= 5) {
+                $dayStart = '08:00';
+                $dayEnd = '16:00';
+            }
+        } elseif ($workPattern === '800_1500') {
+            if ($dow >= 1 && $dow <= 5) {
+                $dayStart = '08:00';
+                $dayEnd = '15:00';
+            }
         }
     }
 
@@ -146,6 +181,7 @@ for ($d = 1; $d <= $dim; $d++) {
         $db->prepare('INSERT INTO schedule_entries (user_id, entry_date, shift_type, shift_start, shift_end, note, created_at, updated_at) VALUES (?,?,?,?,?,?,NOW(),NOW())')
            ->execute([$uid, $date, $type, $dayStart, $dayEnd, $note]);
     }
+    apply_wolne_overtime_balance_change($uid, $date, $existingRow['shift_type'] ?? null, $type);
     $count++;
 
     $changed = (
