@@ -86,7 +86,8 @@ layout_start(MONTH_NAMES_PL[$month].' '.$year);
     $nextDow = DAY_NAMES_PL[(int)date('w', strtotime($nextDyz['entry_date']))];
     $nextTime = ($nextDyz['shift_start'] && $nextDyz['shift_end'])
         ? short_time($nextDyz['shift_start']).' – '.short_time($nextDyz['shift_end']) : '';
-    $daysUntil = max(0, (int)((strtotime($nextDyz['entry_date']) - time()) / 86400));
+    $todayDate = date('Y-m-d');
+    $daysUntil = max(0, (int)((strtotime($nextDyz['entry_date']) - strtotime($todayDate)) / 86400));
 ?>
 <div class="dyz dyz-unread" id="dyzBanner">
     <div class="dyz-bar" onclick="toggleDyz()">
@@ -108,7 +109,7 @@ layout_start(MONTH_NAMES_PL[$month].' '.$year);
             $dh = ($dz['shift_start'] && $dz['shift_end'])
                 ? short_time($dz['shift_start']).' – '.short_time($dz['shift_end']) : 'godziny nie ustalone';
             $dhrs = calc_hours($dz['shift_start'], $dz['shift_end']);
-            $dzu = max(0, (int)((strtotime($dz['entry_date']) - time()) / 86400));
+            $dzu = max(0, (int)((strtotime($dz['entry_date']) - strtotime($todayDate)) / 86400));
         ?>
         <div class="dyz-entry" style="animation-delay:<?=$di*0.07?>s">
             <div class="dyz-entry-left">
@@ -291,7 +292,7 @@ foreach($employees as $idx=>$emp):
     <?php for($d=1;$d<=$dim;$d++):
         $dow=(int)date('w',mktime(0,0,0,$month,$d,$year)); $we=$dow===0||$dow===6;
         $e=$ue[$d]??null;
-        $bg=$we?'#fef9f4':'#fff'; $fg='#78716c'; $label=''; $cellH=0; $noTime=false;
+        $bg=$we?'#fef9f4':'#fff'; $fg='#78716c'; $label=''; $cellH=0; $noTime=false; $tooltip='';
         if($e){
             $st=$e['shift_type'];
             $stDef=$shiftTypes[$st]??[];
@@ -303,19 +304,39 @@ foreach($employees as $idx=>$emp):
             $noTime=in_array($st,['urlop','urlop_na_zadanie','chorobowe','wolne','brak'])
                 || strpos($stLabelLc,'urlop')!==false || strpos($stLabelLc,'chorobow')!==false;
             if($noTime){$eStart=null;$eEnd=null;}
-            if($st==='wolne') $label='W';
-            elseif($st==='brak') $label='X';
-            elseif($noTime) $label=$stLabelFull;
-            elseif($st==='swieto') $label=$e['note']?mb_substr($e['note'],0,10):'Święto';
-            elseif($st==='dyzur'){
-                $label='DYŻUR';
-                if($eStart&&$eEnd) $label=short_time($eStart).'-'.short_time($eEnd);
+
+            $eventDisplay = '';
+            $eventNote = '';
+            if ($st === 'wydarzenie') {
+                $rawNote = trim((string)($e['note'] ?? ''));
+                if (strpos($rawNote, '||') !== false) {
+                    [$eventDisplay, $eventNote] = array_pad(array_map('trim', explode('||', $rawNote, 2)), 2, '');
+                } else {
+                    $eventDisplay = $rawNote;
+                }
             }
-            else{
-                if($eStart&&$eEnd) $label=short_time($eStart).'-'.short_time($eEnd);
-                else $label=mb_substr(shift_label($st),0,6);
-            }
+
+            if($st==='wolne') $label='Wolne (W)';
+            elseif($st==='brak') $label='WZ';
+            elseif($st==='wydarzenie') $label=$eventDisplay?:'Wydarzenie';
+            elseif($st==='swieto') $label='Święto';
+            elseif($st==='dyzur') $label='Dyżur';
+            elseif($st==='standard' && $eStart && $eEnd) $label=short_time($eStart).'-'.short_time($eEnd);
+            else $label=$stLabelFull;
+
             $cellH=$noTime?0:calc_hours($eStart,$eEnd);
+            $ttLines = [$label];
+            if ($eStart && $eEnd) $ttLines[] = 'Godziny: '.short_time($eStart).' – '.short_time($eEnd);
+            if ($cellH > 0) $ttLines[] = 'Suma: '.$cellH.'h';
+            $noteToShow = $st==='wydarzenie' ? $eventNote : trim((string)($e['note'] ?? ''));
+            if ($noteToShow !== '') $ttLines[] = 'Notatka: '.$noteToShow;
+            $tooltip = implode("\n", $ttLines);
+        }
+        $cellTip = '';
+        if ($rv) {
+            $cellTip = "⚠ Przerwa {$rv['gap']}h (min. 11h)\nPoprzednia zmiana: do {$rv['prev_end']}\nTa zmiana: od {$rv['next_start']}\nArt. 132 Kodeksu pracy";
+        } elseif ($tooltip) {
+            $cellTip = $tooltip;
         }
         $da='';
         if(is_admin()){
@@ -328,11 +349,9 @@ foreach($employees as $idx=>$emp):
         style="background:<?=$bg?>;color:<?=$fg?>"
         <?=$da?>
         <?=is_admin()?'onclick="sc(this,event)" ondblclick="oe(this)"':''?>
-        <?php if($rv): ?>title="&#9888; Przerwa <?=$rv['gap']?>h (min. 11h) &#10;Poprzednia zmiana: do <?=$rv['prev_end']?> &#10;Ta zmiana: od <?=$rv['next_start']?> &#10;Art. 132 Kodeksu pracy"
-        <?php elseif($e&&$e['note']): ?>title="<?=h($e['note'])?>"<?php endif; ?>>
+        <?php if($cellTip): ?>data-tip="<?=h($cellTip)?>"<?php endif; ?>>
         <?php if($rv):?><div class="rest-warn-icon">&#9888;</div><?php endif;?>
         <div class="cl"><?=h($label)?></div>
-        <?php if($cellH>0):?><div class="ch"><?=$cellH?>h</div><?php endif;?>
     </td>
     <?php endfor; ?>
 </tr>
@@ -478,17 +497,41 @@ function updUI(t){
     else if(t==='urlop_na_zadanie'){nth.textContent='Urlop na żądanie — godziny pracy nie obowiązują';nth.style.display='';}
     else if(t==='chorobowe'){nth.textContent='Chorobowe — godziny pracy nie obowiązują';nth.style.display='';}
     else if(t==='swieto'){nth.textContent='Wpisz nazwę święta poniżej. Godziny pracy opcjonalne.';nth.style.display='';}
+    else if(t==='wydarzenie'){nth.textContent='Wpisz nazwę wydarzenia do wyświetlania. Opcjonalną notatkę dopisz po ||';nth.style.display='';}
     else if(t==='wolne'){nth.textContent='Dzień wolny';nth.style.display='';}
     else if(t==='brak'){nth.textContent='Brak dyżuru';nth.style.display='';}
     else nth.style.display='none';
     const nl=document.getElementById('noteLbl');
-    nl.textContent=t==='swieto'?'Nazwa święta':'Notatka';
-    document.getElementById('fN').placeholder=t==='swieto'?'np. Dzień Niepodległości':'';
+    nl.textContent=t==='swieto'?'Nazwa święta':(t==='wydarzenie'?'Nazwa wydarzenia':'Notatka');
+    document.getElementById('fN').placeholder=t==='swieto'?'np. Dzień Niepodległości':(t==='wydarzenie'?'np. Koncert Jazzowy || wejście od 17:30':'');
 }
 function calcH(){
     const s=document.getElementById('fS').value,e=document.getElementById('fE').value,d=document.getElementById('hb');
     if(s&&e){const[sh,sm]=s.split(':').map(Number),[eh,em]=e.split(':').map(Number),h=Math.max(0,((eh*60+em)-(sh*60+sm))/60).toFixed(1);document.getElementById('hv').textContent=h;d.style.display=h>0?'':'none';}
     else d.style.display='none';
+}
+
+function parseEventNote(note){
+    const raw=(note||'').trim();
+    if(raw.indexOf('||')===-1) return {label:raw,note:''};
+    const parts=raw.split('||');
+    return {label:(parts[0]||'').trim(),note:(parts.slice(1).join('||')||'').trim()};
+}
+function buildCellTooltip(type,label,start,end,hours,note){
+    let displayLabel=label||'';
+    let noteText=(note||'').trim();
+    if(type==='wydarzenie'){
+        const parsed=parseEventNote(noteText);
+        if(parsed.label) displayLabel=parsed.label;
+        noteText=parsed.note;
+        if(!displayLabel) displayLabel='Wydarzenie';
+    }
+    const lines=[];
+    if(displayLabel) lines.push(displayLabel);
+    if(start&&end) lines.push('Godziny: '+start+' – '+end);
+    if((hours||0)>0) lines.push('Suma: '+hours+'h');
+    if(noteText) lines.push('Notatka: '+noteText);
+    return lines.join('\n');
 }
 function msTc(){
     const T=document.getElementById('msType'),o=T.options[T.selectedIndex],t=T.value;
@@ -521,13 +564,13 @@ function applyMulti(){
             td.dataset.eid=it.id||'';
             td.style.background=it.color;
             td.style.color=it.text;
-            td.title=it.note||'';
+            const tip=buildCellTooltip(it.shift_type,it.label,it.shift_start,it.shift_end,it.hours,it.tooltip_note||it.note||'');
+            td.dataset.tip=tip;
+            if(!tip) td.removeAttribute('data-tip');
             td.classList.toggle('cell-dyzur',it.shift_type==='dyzur');
             td.classList.toggle('cell-wrap',(it.label||'').length>6);
             td.querySelector('.cl').textContent=it.label||'';
-            const h=td.querySelector('.ch');
-            if(it.hours>0){if(h)h.textContent=it.hours+'h';else{const n=document.createElement('div');n.className='ch';n.textContent=it.hours+'h';td.appendChild(n);}}
-            else if(h)h.remove();
+            const h=td.querySelector('.ch'); if(h)h.remove();
         });
         clearSelection();
         alert('Zaktualizowano '+d.count+' komórek');
@@ -990,5 +1033,39 @@ function doAutoFill(){
     el.addEventListener('click',e=>{if(mv){e.stopPropagation();mv=0;}},true);
 })();
 </script>
+
+
+<script>
+(function(){
+  const tip=document.createElement('div');
+  tip.id='cellTipBox';
+  tip.style.cssText='position:fixed;z-index:9999;pointer-events:none;max-width:320px;background:linear-gradient(180deg,#111827,#1f2937);color:#fff;padding:10px 12px;border-radius:10px;font-size:12px;line-height:1.45;white-space:pre-line;box-shadow:0 10px 24px rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.12);opacity:0;transform:translateY(4px);transition:opacity .12s ease,transform .12s ease';
+  document.body.appendChild(tip);
+  let active=null;
+  function show(el,e){
+    const txt=el.getAttribute('data-tip');
+    if(!txt)return;
+    active=el;
+    tip.textContent=txt;
+    tip.style.opacity='1'; tip.style.transform='translateY(0)';
+    move(e);
+  }
+  function hide(){active=null;tip.style.opacity='0';tip.style.transform='translateY(4px)';}
+  function move(e){
+    if(!active)return;
+    const pad=14;
+    let x=e.clientX+16,y=e.clientY+16;
+    const r=tip.getBoundingClientRect();
+    if(x+r.width>window.innerWidth-pad)x=window.innerWidth-r.width-pad;
+    if(y+r.height>window.innerHeight-pad)y=e.clientY-r.height-14;
+    tip.style.left=x+'px';tip.style.top=y+'px';
+  }
+  document.addEventListener('mouseover',e=>{const c=e.target.closest('.cell[data-tip]');if(c)show(c,e);});
+  document.addEventListener('mousemove',move);
+  document.addEventListener('mouseout',e=>{if(active && !e.relatedTarget?.closest('.cell[data-tip]')) hide();});
+  document.addEventListener('scroll',()=>{if(active)hide();},true);
+})();
+</script>
+
 
 <?php layout_end(); ?>
