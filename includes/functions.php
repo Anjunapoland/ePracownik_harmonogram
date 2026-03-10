@@ -239,6 +239,10 @@ function mark_notifications_read(int $userId): void {
     get_db()->prepare('UPDATE notifications SET is_read=1 WHERE user_id=? AND is_read=0')->execute([$userId]);
 }
 
+function clear_notifications(int $userId): void {
+    get_db()->prepare('DELETE FROM notifications WHERE user_id=?')->execute([$userId]);
+}
+
 // ---- Dyżury ----
 
 function get_user_dyzury(int $userId, int $limit = 10): array {
@@ -533,7 +537,8 @@ function request_pdf_safe_text(string $text): string {
     if ($ascii === false || $ascii === '') {
         $ascii = preg_replace('/[^\x20-\x7E]/', ' ', $text) ?? '';
     }
-    $ascii = str_replace(["", "
+    $ascii = str_replace(["
+", "
 ", "	"], ' ', $ascii);
     $ascii = preg_replace('/[^\x20-\x7E]/', ' ', $ascii) ?? '';
     $ascii = preg_replace('/\s+/', ' ', trim($ascii)) ?? '';
