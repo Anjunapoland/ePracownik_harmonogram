@@ -86,7 +86,8 @@ layout_start(MONTH_NAMES_PL[$month].' '.$year);
     $nextDow = DAY_NAMES_PL[(int)date('w', strtotime($nextDyz['entry_date']))];
     $nextTime = ($nextDyz['shift_start'] && $nextDyz['shift_end'])
         ? short_time($nextDyz['shift_start']).' – '.short_time($nextDyz['shift_end']) : '';
-    $daysUntil = max(0, (int)((strtotime($nextDyz['entry_date']) - time()) / 86400));
+    $todayDate = date('Y-m-d');
+    $daysUntil = max(0, (int)((strtotime($nextDyz['entry_date']) - strtotime($todayDate)) / 86400));
 ?>
 <div class="dyz dyz-unread" id="dyzBanner">
     <div class="dyz-bar" onclick="toggleDyz()">
@@ -108,7 +109,7 @@ layout_start(MONTH_NAMES_PL[$month].' '.$year);
             $dh = ($dz['shift_start'] && $dz['shift_end'])
                 ? short_time($dz['shift_start']).' – '.short_time($dz['shift_end']) : 'godziny nie ustalone';
             $dhrs = calc_hours($dz['shift_start'], $dz['shift_end']);
-            $dzu = max(0, (int)((strtotime($dz['entry_date']) - time()) / 86400));
+            $dzu = max(0, (int)((strtotime($dz['entry_date']) - strtotime($todayDate)) / 86400));
         ?>
         <div class="dyz-entry" style="animation-delay:<?=$di*0.07?>s">
             <div class="dyz-entry-left">
