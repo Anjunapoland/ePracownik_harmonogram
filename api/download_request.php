@@ -24,6 +24,7 @@ if (!$req['pdf_file']) { http_response_code(404); die('No PDF'); }
 $filepath = __DIR__ . '/../storage/requests/' . $req['pdf_file'];
 if (!file_exists($filepath)) { http_response_code(404); die('File not found'); }
 
-header('Content-Type: text/html; charset=UTF-8');
-header('Content-Disposition: inline; filename="wniosek_' . $req['id'] . '.html"');
+header('Content-Type: application/pdf');
+header('Content-Disposition: attachment; filename="wniosek_' . $req['id'] . '.pdf"');
+header('Content-Length: ' . filesize($filepath));
 readfile($filepath);

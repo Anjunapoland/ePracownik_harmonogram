@@ -144,6 +144,7 @@ if ($action === 'approve') {
 
     // Generate PDF
     $pdfFile = generate_request_pdf($req, $u['full_name']);
+    $pdfPath = __DIR__ . '/../storage/requests/' . $pdfFile;
 
     // Notify employee
     $formLabels = ['leave'=>'Wniosek o urlop','overtime'=>'Wniosek o czas wolny za nadgodziny','wifi'=>'Oświadczenie Wi‑Fi'];
@@ -155,6 +156,19 @@ if ($action === 'approve') {
         $employeeFormLabel . ' został zaakceptowany przez ' . $u['full_name'] . '.',
         null
     );
+
+    $empMailStmt = $db->prepare('SELECT email, full_name FROM users WHERE id=?');
+    $empMailStmt->execute([(int)$req['user_id']]);
+    $empMail = $empMailStmt->fetch();
+    if ($empMail && !empty($empMail['email'])) {
+        send_notification_email_with_attachment(
+            (string)$empMail['email'],
+            'Zaakceptowany wniosek - ' . $employeeFormLabel,
+            'Twój wniosek został zaakceptowany przez ' . $u['full_name'] . '. W załączniku znajdziesz plik PDF.',
+            $pdfPath,
+            'wniosek_' . $reqId . '.pdf'
+        );
+    }
 
     // Notify all kadry users
     $kadryUsers = $db->query("SELECT id, email, full_name FROM users WHERE role='kadry' AND active=1")->fetchAll();
@@ -171,16 +185,13 @@ if ($action === 'approve') {
             $eName . ': ' . $fLabel . ' — zaakceptowany przez ' . $u['full_name'] . ' dnia ' . date('d.m.Y H:i'),
             null
         );
-        // Email notification to kadry
-        if (get_setting('email_notify_kadry', '0') === '1' && $kUser['email']) {
-            $formDataText = '';
-            foreach (json_decode($req['form_data'], true) ?: [] as $k => $v) {
-                if ($v) $formDataText .= $k . ': ' . $v . "\n";
-            }
-            send_notification_email(
-                $kUser['email'],
+        if (!empty($kUser['email'])) {
+            send_notification_email_with_attachment(
+                (string)$kUser['email'],
                 'Zaakceptowany wniosek - ' . $eName,
-                "Wniosek pracownika " . $eName . " zostal zaakceptowany.\n\nTyp: " . $fLabel . "\nZaakceptowal(a): " . $u['full_name'] . "\nData: " . date('d.m.Y H:i') . "\n\nDane wniosku:\n" . $formDataText . "\nZaloguj sie do systemu harmonogram.sck.strzegom.pl"
+                'Wniosek pracownika ' . $eName . ' został zaakceptowany przez ' . $u['full_name'] . '. W załączniku przesyłamy plik PDF.',
+                $pdfPath,
+                'wniosek_' . $reqId . '.pdf'
             );
         }
     }
