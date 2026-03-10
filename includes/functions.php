@@ -553,15 +553,46 @@ function generate_request_pdf(array $req, string $approverName): string {
     $emp->execute([$req['user_id']]);
     $empName = (string)($emp->fetchColumn() ?: 'Nieznany');
 
-    $lines = [];
-    $lines[] = $title;
-    $lines[] = 'Pracownik: ' . $empName;
-    $lines[] = str_repeat('-', 90);
+    $lines = [$title, 'Pracownik: ' . $empName, str_repeat('-', 90)];
     foreach ($data as $k => $v) {
         if ($v === null || $v === '') continue;
-        $label = trim((string)$k);
-        $val = trim((string)$v);
-        $lines[] = $label . ': ' . $val;
+        $lines[] = trim((string)$k) . ': ' . trim((string)$v);
+    }
+    $lines[] = str_repeat('-', 90);
+    $lines[] = 'ZAAKCEPTOWANY';
+    $lines[] = 'Zaakceptował(a): ' . $approverName;
+    $lines[] = 'Data: ' . date('d.m.Y H:i');
+
+    $chunks = array_chunk($lines, 48);
+    $objects = [];
+    $objects[1] = "<< /Type /Catalog /Pages 2 0 R >>";
+
+    $fontObjectId = 3;
+    $nextObjectId = 4;
+    $contentIds = [];
+    $pageIds = [];
+
+    foreach ($chunks as $chunk) {
+        $stream = "BT
+/F1 10 Tf
+40 800 Td
+14 TL
+";
+        foreach ($chunk as $line) {
+            $stream .= '(' . request_pdf_safe_text($line) . ") Tj
+T*
+";
+        }
+        $stream .= "ET";
+
+        $contentId = $nextObjectId++;
+        $pageId = $nextObjectId++;
+        $contentIds[] = $contentId;
+        $pageIds[] = $pageId;
+        $objects[$contentId] = "<< /Length " . strlen($stream) . " >>
+stream
+" . $stream . "
+endstream";
     }
     $lines[] = str_repeat('-', 90);
     $lines[] = 'ZAAKCEPTOWANY';
@@ -601,6 +632,45 @@ endstream";
 endobj
 ";
     }
+    $xrefOffset = strlen($pdf);
+    $maxId = max(array_keys($objects));
+    $pdf .= "xref
+0 " . ($maxId + 1) . "
+";
+    $pdf .= "0000000000 65535 f 
+";
+    for ($i = 1; $i <= $maxId; $i++) {
+        $off = $offsets[$i] ?? 0;
+        $pdf .= sprintf("%010d 00000 n 
+", $off);
+    }
+    $pdf .= "trailer
+<< /Size " . ($maxId + 1) . " /Root 1 0 R >>
+startxref
+{$xrefOffset}
+%%EOF";
+
+    $kids = implode(' ', array_map(static fn($id) => $id . ' 0 R', $pageIds));
+    $objects[2] = "<< /Type /Pages /Kids [ {$kids} ] /Count " . count($pageIds) . " >>";
+    $objects[$fontObjectId] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
+
+    foreach ($pageIds as $idx => $pageId) {
+        $contentId = $contentIds[$idx];
+        $objects[$pageId] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 {$fontObjectId} 0 R >> >> /Contents {$contentId} 0 R >>";
+    }
+
+    ksort($objects);
+    $pdf = "%PDF-1.4
+";
+    $offsets = [0];
+    foreach ($objects as $id => $body) {
+        $offsets[$id] = strlen($pdf);
+        $pdf .= "{$id} 0 obj
+{$body}
+endobj
+";
+    }
+
     $xrefOffset = strlen($pdf);
     $maxId = max(array_keys($objects));
     $pdf .= "xref
