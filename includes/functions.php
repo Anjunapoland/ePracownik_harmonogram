@@ -38,6 +38,20 @@ function get_all_users(): array {
     return get_db()->query("SELECT * FROM users WHERE id > 0 ORDER BY role DESC, active DESC, full_name")->fetchAll();
 }
 
+
+function ensure_users_profile_columns(): void {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+
+    $db = get_db();
+    $stmt = $db->query("SHOW COLUMNS FROM users LIKE 'job_title'");
+    if (!$stmt->fetch()) {
+        $db->exec("ALTER TABLE users ADD COLUMN job_title VARCHAR(191) NOT NULL DEFAULT '' AFTER full_name");
+    }
+}
+
+
 function shift_label(string $t): string  { $st = get_shift_types(); return $st[$t]['label'] ?? $t; }
 function shift_color(string $t): string  { $st = get_shift_types(); return $st[$t]['color'] ?? '#fff'; }
 function shift_text(string $t): string   { $st = get_shift_types(); return $st[$t]['text']  ?? '#333'; }
@@ -100,6 +114,35 @@ function seed_shift_types(): void {
         $db->prepare('INSERT IGNORE INTO shift_types (code, label, color, text_color, default_start, default_end, sort_order) VALUES (?,?,?,?,?,?,?)')
            ->execute([$code, $s['label'], $s['color'], $s['text'], $s['start'] ?: null, $s['end'] ?: null, $order++]);
     }
+}
+
+
+function get_wolne_overtime_delta_hours(string $date): float {
+    $ts = strtotime($date);
+    if ($ts === false) return 0.0;
+    $dow = (int)date('w', $ts); // 0=nd, 1=pn, ... 5=pt
+    if ($dow >= 1 && $dow <= 4) return 8.5;
+    if ($dow === 5) return 6.0;
+    return 0.0;
+}
+
+function apply_wolne_overtime_balance_change(int $userId, string $date, ?string $oldType, ?string $newType): void {
+    $oldIsWolne = ((string)$oldType === 'wolne');
+    $newIsWolne = ((string)$newType === 'wolne');
+    if ($oldIsWolne === $newIsWolne) return;
+
+    $hours = get_wolne_overtime_delta_hours($date);
+    if ($hours <= 0) return;
+
+    // Dodanie "wolne (W)" odejmuje godziny, zdjęcie takiego dnia oddaje godziny.
+    $delta = $newIsWolne ? -$hours : $hours;
+    $year = (int)date('Y', strtotime($date));
+
+    $db = get_db();
+    $db->prepare('INSERT IGNORE INTO leave_balances (user_id, year, overtime_hours, created_at, updated_at) VALUES (?,?,0,NOW(),NOW())')
+       ->execute([$userId, $year]);
+    $db->prepare('UPDATE leave_balances SET overtime_hours = ROUND(overtime_hours + ?, 1), updated_at=NOW() WHERE user_id=? AND year=?')
+       ->execute([$delta, $userId, $year]);
 }
 
 function month_hours(array $ue, int $dim): float {
