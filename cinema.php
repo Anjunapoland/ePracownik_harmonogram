@@ -77,6 +77,68 @@ function build_pdf_from_jpegs(array $images, int $imgWidth, int $imgHeight): str
     return $pdf;
 }
 
+function pdf_safe_text(string $text): string {
+    $ascii = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $text);
+    if ($ascii === false) {
+        $ascii = $text;
+    }
+    return str_replace(["\\", "(", ")"], ["\\\\", "\(", "\)"], $ascii);
+}
+
+function build_text_only_pdf(array $lines, int $maxLinesPerPage = 48): string {
+    $chunks = array_chunk($lines, $maxLinesPerPage);
+    $objects = [];
+    $objects[1] = "<< /Type /Catalog /Pages 2 0 R >>";
+
+    $pageObjectIds = [];
+    $contentObjectIds = [];
+    $fontObjectId = 3;
+    $nextObjectId = 4;
+
+    foreach ($chunks as $chunk) {
+        $stream = "BT\n/F1 10 Tf\n40 800 Td\n14 TL\n";
+        foreach ($chunk as $line) {
+            $stream .= '(' . pdf_safe_text($line) . ") Tj\nT*\n";
+        }
+        $stream .= "ET";
+
+        $contentId = $nextObjectId++;
+        $pageId = $nextObjectId++;
+        $contentObjectIds[] = $contentId;
+        $pageObjectIds[] = $pageId;
+        $objects[$contentId] = "<< /Length " . strlen($stream) . " >>\nstream\n" . $stream . "\nendstream";
+    }
+
+    $kids = implode(' ', array_map(static fn($id) => $id . ' 0 R', $pageObjectIds));
+    $objects[2] = "<< /Type /Pages /Kids [ {$kids} ] /Count " . count($pageObjectIds) . " >>";
+    $objects[$fontObjectId] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
+
+    foreach ($pageObjectIds as $idx => $pageId) {
+        $contentId = $contentObjectIds[$idx];
+        $objects[$pageId] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 {$fontObjectId} 0 R >> >> /Contents {$contentId} 0 R >>";
+    }
+
+    ksort($objects);
+    $pdf = "%PDF-1.4\n";
+    $offsets = [0];
+    foreach ($objects as $id => $body) {
+        $offsets[$id] = strlen($pdf);
+        $pdf .= "{$id} 0 obj\n{$body}\nendobj\n";
+    }
+
+    $xrefOffset = strlen($pdf);
+    $maxId = max(array_keys($objects));
+    $pdf .= "xref\n0 " . ($maxId + 1) . "\n";
+    $pdf .= "0000000000 65535 f \n";
+    for ($i = 1; $i <= $maxId; $i++) {
+        $off = $offsets[$i] ?? 0;
+        $pdf .= sprintf("%010d 00000 n \n", $off);
+    }
+    $pdf .= "trailer\n<< /Size " . ($maxId + 1) . " /Root 1 0 R >>\nstartxref\n{$xrefOffset}\n%%EOF";
+
+    return $pdf;
+}
+
 // Fetch kino entries for all 3 months
 $allKino = [];
 foreach ($months as $mp) {
@@ -117,9 +179,44 @@ if (($_GET['download'] ?? '') === 'pdf') {
     $fontRegular = pick_pdf_font_path('regular');
     $fontBold = pick_pdf_font_path('bold') ?? $fontRegular;
 
-    if (!$fontRegular || !$fontBold || !function_exists('imagecreatetruecolor') || !function_exists('imagettftext')) {
-        http_response_code(500);
-        die('Brak wymaganych komponentów do generowania PDF.');
+    $canRenderPrettyPdf = $fontRegular && $fontBold && function_exists('imagecreatetruecolor') && function_exists('imagettftext');
+
+    if (!$canRenderPrettyPdf) {
+        $lines = [
+            'Rozliczenie kina - podsumowanie (ostatnie 3 miesiace)',
+            'Wygenerowano: ' . date('d.m.Y H:i'),
+            ''
+        ];
+
+        foreach ($allKino as $mk) {
+            $monthTotalHours = array_sum(array_column($mk['employees'], 'total_hours'));
+            $lines[] = $mk['label'] . ' | pracownicy: ' . count($mk['employees']) . ' | zmiany: ' . $mk['total_entries'] . ' | godziny: ' . $monthTotalHours;
+            if (empty($mk['employees'])) {
+                $lines[] = '  - Brak zmian kinowych';
+                $lines[] = '';
+                continue;
+            }
+
+            foreach ($mk['employees'] as $emp) {
+                $lines[] = '  * ' . $emp['name'] . ' (' . $emp['dept'] . ') - ' . $emp['total_hours'] . ' godz., ' . count($emp['days']) . ' zmian';
+                foreach ($emp['days'] as $di => $day) {
+                    $dt = strtotime($day['date']);
+                    $dow = $dayNames[(int)date('w', $dt)];
+                    $hours = $day['start'] && $day['end'] ? short_time($day['start']) . '-' . short_time($day['end']) : 'nieustalone';
+                    $lines[] = '      ' . ($di + 1) . '. ' . date('d.m.Y', $dt) . ' (' . $dow . ') | ' . $hours . ' | ' . $day['hours'] . 'h';
+                }
+            }
+            $lines[] = '';
+        }
+
+        $pdf = build_text_only_pdf($lines);
+        $filename = 'rozliczenie_kina_' . date('Ymd_His') . '.pdf';
+
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Content-Length: ' . strlen($pdf));
+        echo $pdf;
+        exit;
     }
 
     $pageW = 1240;
