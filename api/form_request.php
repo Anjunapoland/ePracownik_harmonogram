@@ -112,24 +112,39 @@ if ($action === 'approve') {
     }
 
     if ($req['form_type'] === 'overtime') {
-        // Parse total hours to deduct from form data
-        $sumText = $formData['Razem do odbioru'] ?? '';
-        preg_match('/[\d,.]+/', $sumText, $m);
-        $hours = $m ? (float)str_replace(',', '.', $m[0]) : 0;
-        if ($hours > 0) {
-            $stBal = $db->prepare('SELECT id, overtime_hours FROM leave_balances WHERE user_id=? AND year=?');
-            $stBal->execute([$req['user_id'], $currentYear]);
-            $bal = $stBal->fetch();
-            if ($bal) {
-                $newOt = max(0, (float)$bal['overtime_hours'] - $hours);
-                $db->prepare('UPDATE leave_balances SET overtime_hours=?, updated_at=NOW() WHERE id=?')
-                   ->execute([$newOt, $bal['id']]);
+        // Overtime request: mark requested days as "Wolne (W)" in schedule.
+        // Balance is adjusted per day by apply_wolne_overtime_balance_change():
+        // pn-czw = 8.5h, pt = 6h, and reverted automatically when Wolne is removed.
+        $daysRaw = (string)($formData['Dni do odbioru'] ?? '');
+        $days = array_filter(array_map('trim', explode(';', $daysRaw)));
+
+        foreach ($days as $dayItem) {
+            if (!preg_match('/(\d{2})\.(\d{2})\.(\d{4})/', $dayItem, $mDate)) {
+                continue;
             }
+            $date = sprintf('%04d-%02d-%02d', (int)$mDate[3], (int)$mDate[2], (int)$mDate[1]);
+
+            $stEntry = $db->prepare('SELECT id, shift_type FROM schedule_entries WHERE user_id=? AND entry_date=?');
+            $stEntry->execute([(int)$req['user_id'], $date]);
+            $entry = $stEntry->fetch();
+            $prevType = $entry['shift_type'] ?? null;
+
+            if ($entry) {
+                $db->prepare('UPDATE schedule_entries SET shift_type=?, shift_start=NULL, shift_end=NULL, note=?, updated_at=NOW() WHERE id=?')
+                   ->execute(['wolne', null, (int)$entry['id']]);
+            } else {
+                $db->prepare('INSERT INTO schedule_entries (user_id, entry_date, shift_type, shift_start, shift_end, note, created_at, updated_at) VALUES (?,?,?,?,?,?,NOW(),NOW())')
+                   ->execute([(int)$req['user_id'], $date, 'wolne', null, null, null]);
+            }
+
+            apply_wolne_overtime_balance_change((int)$req['user_id'], $date, $prevType, 'wolne');
+            create_or_replace_schedule_notification((int)$req['user_id'], 'wolne', $date, null, null, '');
         }
     }
 
     // Generate PDF
     $pdfFile = generate_request_pdf($req, $u['full_name']);
+    $pdfPath = __DIR__ . '/../storage/requests/' . $pdfFile;
 
     // Notify employee
     $formLabels = ['leave'=>'Wniosek o urlop','overtime'=>'Wniosek o czas wolny za nadgodziny','wifi'=>'Oświadczenie Wi‑Fi'];
@@ -141,6 +156,19 @@ if ($action === 'approve') {
         $employeeFormLabel . ' został zaakceptowany przez ' . $u['full_name'] . '.',
         null
     );
+
+    $empMailStmt = $db->prepare('SELECT email, full_name FROM users WHERE id=?');
+    $empMailStmt->execute([(int)$req['user_id']]);
+    $empMail = $empMailStmt->fetch();
+    if ($empMail && !empty($empMail['email'])) {
+        send_notification_email_with_attachment(
+            (string)$empMail['email'],
+            'Zaakceptowany wniosek - ' . $employeeFormLabel,
+            'Twój wniosek został zaakceptowany przez ' . $u['full_name'] . '. W załączniku znajdziesz plik PDF.',
+            $pdfPath,
+            'wniosek_' . $reqId . '.pdf'
+        );
+    }
 
     // Notify all kadry users
     $kadryUsers = $db->query("SELECT id, email, full_name FROM users WHERE role='kadry' AND active=1")->fetchAll();
@@ -157,16 +185,13 @@ if ($action === 'approve') {
             $eName . ': ' . $fLabel . ' — zaakceptowany przez ' . $u['full_name'] . ' dnia ' . date('d.m.Y H:i'),
             null
         );
-        // Email notification to kadry
-        if (get_setting('email_notify_kadry', '0') === '1' && $kUser['email']) {
-            $formDataText = '';
-            foreach (json_decode($req['form_data'], true) ?: [] as $k => $v) {
-                if ($v) $formDataText .= $k . ': ' . $v . "\n";
-            }
-            send_notification_email(
-                $kUser['email'],
+        if (!empty($kUser['email'])) {
+            send_notification_email_with_attachment(
+                (string)$kUser['email'],
                 'Zaakceptowany wniosek - ' . $eName,
-                "Wniosek pracownika " . $eName . " zostal zaakceptowany.\n\nTyp: " . $fLabel . "\nZaakceptowal(a): " . $u['full_name'] . "\nData: " . date('d.m.Y H:i') . "\n\nDane wniosku:\n" . $formDataText . "\nZaloguj sie do systemu harmonogram.sck.strzegom.pl"
+                'Wniosek pracownika ' . $eName . ' został zaakceptowany przez ' . $u['full_name'] . '. W załączniku przesyłamy plik PDF.',
+                $pdfPath,
+                'wniosek_' . $reqId . '.pdf'
             );
         }
     }
