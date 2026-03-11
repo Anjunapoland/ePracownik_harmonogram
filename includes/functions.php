@@ -239,6 +239,10 @@ function mark_notifications_read(int $userId): void {
     get_db()->prepare('UPDATE notifications SET is_read=1 WHERE user_id=? AND is_read=0')->execute([$userId]);
 }
 
+function clear_notifications(int $userId): void {
+    get_db()->prepare('DELETE FROM notifications WHERE user_id=?')->execute([$userId]);
+}
+
 // ---- Dyżury ----
 
 function get_user_dyzury(int $userId, int $limit = 10): array {
@@ -529,7 +533,7 @@ function request_pdf_safe_text(string $text): string {
 
 function generate_request_pdf(array $req, string $approverName): string {
     $data = json_decode($req['form_data'], true) ?: [];
-    $formLabels = ['leave'=>'Wniosek o urlop wypoczynkowy','overtime'=>'Wniosek o czas wolny za nadgodziny','wifi'=>'Oświadczenie Wi-Fi SCK'];
+    $formLabels = ['leave'=>'Wniosek o urlop wypoczynkowy','overtime'=>'Wniosek o czas wolny za nadgodziny','wifi'=>'Oświadczenie Wi‑Fi SCK'];
     $title = $formLabels[$req['form_type']] ?? $req['form_type'];
 
     $db = get_db();
@@ -581,6 +585,35 @@ stream
 " . $stream . "
 endstream";
     }
+    $lines[] = str_repeat('-', 88);
+    $lines[] = 'ZAAKCEPTOWANY';
+    $lines[] = 'Zaakceptowal(a): ' . $approverName;
+    $lines[] = 'Data: ' . date('d.m.Y H:i');
+
+    $pdf = '';
+
+    if (function_exists('imagecreatetruecolor') && function_exists('imagestring') && function_exists('imagejpeg')) {
+        $w = 1240;
+        $h = 1754;
+        $im = imagecreatetruecolor($w, $h);
+        $white = imagecolorallocate($im, 255, 255, 255);
+        $black = imagecolorallocate($im, 24, 24, 24);
+        $green = imagecolorallocate($im, 22, 163, 74);
+        $greenBg = imagecolorallocate($im, 240, 253, 244);
+        imagefill($im, 0, 0, $white);
+
+        $y = 80;
+        imagestring($im, 5, 70, $y, request_pdf_safe_text($title), $black);
+        $y += 34;
+        imagestring($im, 4, 70, $y, request_pdf_safe_text('Pracownik: ' . $empName), $black);
+        $y += 30;
+
+        foreach ($lines as $idx => $line) {
+            if ($idx < 2) continue;
+            if ($y > 1450) break;
+            imagestring($im, 3, 70, $y, request_pdf_safe_text($line), $black);
+            $y += 20;
+        }
 
     $kidsParts = array();
     foreach ($pageObjectIds as $id) { $kidsParts[] = $id . ' 0 R'; }
