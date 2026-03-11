@@ -233,7 +233,7 @@ function sendForm(){
         'Do':fmtDate(document.getElementById('ulTo').value)
     };
     if(!confirm('Wys\u0142a\u0107 wniosek o urlop do akceptacji?'))return;
-    var b=new URLSearchParams({_token:'<?=h($_SESSION['csrf']??'')?>',action:'submit',form_type:'leave',form_data:JSON.stringify(data)});
+    var b=new URLSearchParams({_token:'<?=h(csrf_token())?>',action:'submit',form_type:'leave',form_data:JSON.stringify(data)});
     fetch('api/form_request.php',{method:'POST',body:b}).then(r=>r.json()).then(d=>{
         if(d.ok)alert('Wniosek zosta\u0142 wys\u0142any do akceptacji.');
         else alert(d.error||'B\u0142\u0105d');
