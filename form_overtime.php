@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/layout.php';
 $user = require_login();
+ensure_users_profile_columns();
 $formsVisible = get_setting('forms_visible', '1') === '1';
 if (!$formsVisible && !is_admin()) { header('Location: schedule.php'); exit; }
 
@@ -103,7 +104,7 @@ layout_start('Wniosek o czas wolny');
         </div>
         <div>
             <label class="fg-label">Stanowisko s&#322;u&#380;bowe</label>
-            <input class="fg-input" type="text" id="otPosition" placeholder="np. specjalista ds. kultury" oninput="up()">
+            <input class="fg-input" type="text" id="otPosition" placeholder="np. specjalista ds. kultury" value="<?=h($user['job_title'] ?? '')?>" oninput="up()">
         </div>
         <div>
             <label class="fg-label">Data wniosku</label>
@@ -285,7 +286,7 @@ function sendForm(){
         'Pozostanie':document.getElementById('otRemH').textContent
     };
     if(!confirm('Wys\u0142a\u0107 wniosek o czas wolny do akceptacji?'))return;
-    var b=new URLSearchParams({_token:'<?=h($_SESSION['csrf']??'')?>',action:'submit',form_type:'overtime',form_data:JSON.stringify(data)});
+    var b=new URLSearchParams({_token:'<?=h(csrf_token())?>',action:'submit',form_type:'overtime',form_data:JSON.stringify(data)});
     fetch('api/form_request.php',{method:'POST',body:b}).then(r=>r.json()).then(d=>{
         if(d.ok)alert('Wniosek zosta\u0142 wys\u0142any do akceptacji.');
         else alert(d.error||'B\u0142\u0105d');

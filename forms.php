@@ -114,7 +114,7 @@ if (!empty($myReqsList)):
         <?php if($r['pdf_file']):?>
         <a href="api/download_request.php?id=<?=$r['id']?>" target="_blank" style="font-size:10px;font-weight:700;padding:3px 10px;border-radius:99px;background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe;text-decoration:none">📄 Pobierz</a>
         <?php endif;?>
-        <button onclick="if(confirm('Usunąć ten wniosek?'))fetch('api/delete_request.php',{method:'POST',body:new URLSearchParams({_token:'<?=h($_SESSION['csrf']??'')?>',request_id:'<?=$r['id']?>'})}).then(r=>r.json()).then(d=>{if(d.ok)location.reload();else alert(d.error)})" style="font-size:10px;font-weight:700;padding:3px 10px;border-radius:99px;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;cursor:pointer">🗑 Usuń</button>
+        <button onclick="if(confirm('Usunąć ten wniosek?'))fetch('api/delete_request.php',{method:'POST',body:new URLSearchParams({_token:'<?=h(csrf_token())?>',request_id:'<?=$r['id']?>'})}).then(r=>r.json()).then(d=>{if(d.ok)location.reload();else alert(d.error)})" style="font-size:10px;font-weight:700;padding:3px 10px;border-radius:99px;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;cursor:pointer">🗑 Usuń</button>
         <?php if($st==='rejected' && $r['reject_reason']):?>
         <div style="width:100%;background:#fef2f2;border-radius:6px;padding:6px 10px;font-size:11px;color:#991b1b;margin-top:2px">Powód: <?=h($r['reject_reason'])?></div>
         <?php endif;?>
