@@ -484,10 +484,8 @@ function send_notification_email_with_attachment(string $to, string $subject, st
     }
 
     $boundary = '=_Part_' . md5((string)microtime(true));
-    $headers  = "From: SCK Harmonogram <noreply@sck.strzegom.pl>
-";
-    $headers .= "MIME-Version: 1.0
-";
+    $headers  = "From: SCK Harmonogram <noreply@sck.strzegom.pl>\r\n";
+    $headers .= "MIME-Version: 1.0\r\n";
     $headers .= "Content-Type: multipart/mixed; boundary=\"" . $boundary . "\"\r\n";
 
     $html = '<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="font-family:Arial,sans-serif;font-size:14px;color:#1c1917;max-width:600px;margin:0 auto">';
@@ -502,27 +500,17 @@ function send_notification_email_with_attachment(string $to, string $subject, st
 
     $attachment = chunk_split(base64_encode((string)file_get_contents($attachmentPath)));
 
-    $message  = "--" . $boundary . "
-";
-    $message .= "Content-Type: text/html; charset=UTF-8
-";
-    $message .= "Content-Transfer-Encoding: 8bit
+    $eol = "\r\n";
+    $message  = "--" . $boundary . $eol;
+    $message .= "Content-Type: text/html; charset=UTF-8" . $eol;
+    $message .= "Content-Transfer-Encoding: 8bit" . $eol . $eol;
+    $message .= $html . $eol;
 
-";
-    $message .= $html . "
-";
-
-    $message .= "--" . $boundary . "
-";
-    $message .= "Content-Type: application/pdf; name=\"" . $attachmentName . "\"
-";
-    $message .= "Content-Disposition: attachment; filename=\"" . $attachmentName . "\"
-";
-    $message .= "Content-Transfer-Encoding: base64
-
-";
-    $message .= $attachment . "
-";
+    $message .= "--" . $boundary . $eol;
+    $message .= "Content-Type: application/pdf; name=\"" . $attachmentName . "\"" . $eol;
+    $message .= "Content-Disposition: attachment; filename=\"" . $attachmentName . "\"" . $eol;
+    $message .= "Content-Transfer-Encoding: base64" . $eol . $eol;
+    $message .= $attachment . $eol;
     $message .= "--" . $boundary . "--";
 
     return @mail($to, '=?UTF-8?B?' . base64_encode($subject) . '?=', $message, $headers);
