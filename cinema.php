@@ -81,7 +81,9 @@ function build_pdf_from_jpegs(array $images, int $imgWidth, int $imgHeight): str
         $objects[$pageId] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /XObject << /Im" . $imageId . " " . $imageId . " 0 R >> >> /Contents " . $contentId . " 0 R >>";
     }
 
-    $kids = implode(' ', array_map(static fn($id) => $id . ' 0 R', $pageIds));
+    $kidsParts = [];
+    foreach ($pageIds as $id) { $kidsParts[] = $id . ' 0 R'; }
+    $kids = implode(' ', $kidsParts);
     $objects[2] = "<< /Type /Pages /Kids [ {$kids} ] /Count " . count($pageIds) . " >>";
 
     ksort($objects);
@@ -137,7 +139,9 @@ function build_text_only_pdf(array $lines, int $maxLinesPerPage = 48): string {
         $objects[$contentId] = "<< /Length " . strlen($stream) . " >>\nstream\n" . $stream . "\nendstream";
     }
 
-    $kids = implode(' ', array_map(static fn($id) => $id . ' 0 R', $pageObjectIds));
+    $kidsParts = [];
+    foreach ($pageObjectIds as $id) { $kidsParts[] = $id . ' 0 R'; }
+    $kids = implode(' ', $kidsParts);
     $objects[2] = "<< /Type /Pages /Kids [ {$kids} ] /Count " . count($pageObjectIds) . " >>";
     $objects[$fontObjectId] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
 
