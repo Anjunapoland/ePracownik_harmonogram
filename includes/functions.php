@@ -38,6 +38,20 @@ function get_all_users(): array {
     return get_db()->query("SELECT * FROM users WHERE id > 0 ORDER BY role DESC, active DESC, full_name")->fetchAll();
 }
 
+
+function ensure_users_profile_columns(): void {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+
+    $db = get_db();
+    $stmt = $db->query("SHOW COLUMNS FROM users LIKE 'job_title'");
+    if (!$stmt->fetch()) {
+        $db->exec("ALTER TABLE users ADD COLUMN job_title VARCHAR(191) NOT NULL DEFAULT '' AFTER full_name");
+    }
+}
+
+
 function shift_label(string $t): string  { $st = get_shift_types(); return $st[$t]['label'] ?? $t; }
 function shift_color(string $t): string  { $st = get_shift_types(); return $st[$t]['color'] ?? '#fff'; }
 function shift_text(string $t): string   { $st = get_shift_types(); return $st[$t]['text']  ?? '#333'; }
@@ -100,6 +114,35 @@ function seed_shift_types(): void {
         $db->prepare('INSERT IGNORE INTO shift_types (code, label, color, text_color, default_start, default_end, sort_order) VALUES (?,?,?,?,?,?,?)')
            ->execute([$code, $s['label'], $s['color'], $s['text'], $s['start'] ?: null, $s['end'] ?: null, $order++]);
     }
+}
+
+
+function get_wolne_overtime_delta_hours(string $date): float {
+    $ts = strtotime($date);
+    if ($ts === false) return 0.0;
+    $dow = (int)date('w', $ts); // 0=nd, 1=pn, ... 5=pt
+    if ($dow >= 1 && $dow <= 4) return 8.5;
+    if ($dow === 5) return 6.0;
+    return 0.0;
+}
+
+function apply_wolne_overtime_balance_change(int $userId, string $date, ?string $oldType, ?string $newType): void {
+    $oldIsWolne = ((string)$oldType === 'wolne');
+    $newIsWolne = ((string)$newType === 'wolne');
+    if ($oldIsWolne === $newIsWolne) return;
+
+    $hours = get_wolne_overtime_delta_hours($date);
+    if ($hours <= 0) return;
+
+    // Dodanie "wolne (W)" odejmuje godziny, zdjęcie takiego dnia oddaje godziny.
+    $delta = $newIsWolne ? -$hours : $hours;
+    $year = (int)date('Y', strtotime($date));
+
+    $db = get_db();
+    $db->prepare('INSERT IGNORE INTO leave_balances (user_id, year, overtime_hours, created_at, updated_at) VALUES (?,?,0,NOW(),NOW())')
+       ->execute([$userId, $year]);
+    $db->prepare('UPDATE leave_balances SET overtime_hours = ROUND(overtime_hours + ?, 1), updated_at=NOW() WHERE user_id=? AND year=?')
+       ->execute([$delta, $userId, $year]);
 }
 
 function month_hours(array $ue, int $dim): float {
@@ -431,10 +474,71 @@ function send_notification_email(string $to, string $subject, string $body): boo
     return @mail($to, '=?UTF-8?B?' . base64_encode($subject) . '?=', $html, $headers);
 }
 
-/**
- * Generate PDF for approved form request.
- * Returns filename or false.
- */
+function send_notification_email_with_attachment(string $to, string $subject, string $body, string $attachmentPath, string $attachmentName = 'wniosek.pdf'): bool {
+    if (!is_file($attachmentPath)) {
+        return send_notification_email($to, $subject, $body);
+    }
+
+    $boundary = '=_Part_' . md5((string)microtime(true));
+    $headers  = "From: SCK Harmonogram <noreply@sck.strzegom.pl>
+";
+    $headers .= "MIME-Version: 1.0
+";
+    $headers .= "Content-Type: multipart/mixed; boundary=\"" . $boundary . "\"\r\n";
+
+    $html = '<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="font-family:Arial,sans-serif;font-size:14px;color:#1c1917;max-width:600px;margin:0 auto">';
+    $html .= '<div style="background:linear-gradient(135deg,#ea580c,#f97316);padding:16px 24px;border-radius:12px 12px 0 0">';
+    $html .= '<h2 style="margin:0;color:#fff;font-size:16px">SCK Harmonogram</h2></div>';
+    $html .= '<div style="background:#fff;border:1px solid #e7e5e4;border-top:none;border-radius:0 0 12px 12px;padding:20px 24px">';
+    $html .= '<h3 style="margin:0 0 12px;color:#1c1917">' . htmlspecialchars($subject) . '</h3>';
+    $html .= '<p style="margin:0;line-height:1.6;color:#57534e">' . nl2br(htmlspecialchars($body)) . '</p>';
+    $html .= '<hr style="border:none;border-top:1px solid #f5f5f4;margin:20px 0">';
+    $html .= '<p style="font-size:11px;color:#a8a29e;margin:0">W załączniku znajduje się plik PDF z wnioskiem.</p>';
+    $html .= '</div></body></html>';
+
+    $attachment = chunk_split(base64_encode((string)file_get_contents($attachmentPath)));
+
+    $message  = "--" . $boundary . "
+";
+    $message .= "Content-Type: text/html; charset=UTF-8
+";
+    $message .= "Content-Transfer-Encoding: 8bit
+
+";
+    $message .= $html . "
+";
+
+    $message .= "--" . $boundary . "
+";
+    $message .= "Content-Type: application/pdf; name=\"" . $attachmentName . "\"
+";
+    $message .= "Content-Disposition: attachment; filename=\"" . $attachmentName . "\"
+";
+    $message .= "Content-Transfer-Encoding: base64
+
+";
+    $message .= $attachment . "
+";
+    $message .= "--" . $boundary . "--";
+
+    return @mail($to, '=?UTF-8?B?' . base64_encode($subject) . '?=', $message, $headers);
+}
+
+function request_pdf_escape(string $text): string {
+    return str_replace(["\\", "(", ")"], ["\\\\", "\(", "\)"], $text);
+}
+
+function request_pdf_safe_text(string $text): string {
+    $ascii = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $text);
+    if ($ascii === false || $ascii === '') {
+        $ascii = preg_replace('/[^\x20-\x7E]/', ' ', $text) ?? '';
+    }
+    $ascii = str_replace(array("\n", "\r", "\t"), ' ', $ascii);
+    $ascii = preg_replace('/[^\x20-\x7E]/', ' ', $ascii) ?? '';
+    $ascii = preg_replace('/\s+/', ' ', trim($ascii)) ?? '';
+    return request_pdf_escape($ascii);
+}
+
 function generate_request_pdf(array $req, string $approverName): string {
     $data = json_decode($req['form_data'], true) ?: [];
     $formLabels = ['leave'=>'Wniosek o urlop wypoczynkowy','overtime'=>'Wniosek o czas wolny za nadgodziny','wifi'=>'Oświadczenie Wi-Fi SCK'];
@@ -443,37 +547,100 @@ function generate_request_pdf(array $req, string $approverName): string {
     $db = get_db();
     $emp = $db->prepare('SELECT full_name FROM users WHERE id=?');
     $emp->execute([$req['user_id']]);
-    $empName = $emp->fetchColumn() ?: 'Nieznany';
+    $empName = (string)($emp->fetchColumn() ?: 'Nieznany');
+
+    $lines = [];
+    $lines[] = $title;
+    $lines[] = 'Pracownik: ' . $empName;
+    $lines[] = str_repeat('-', 82);
+    foreach ($data as $k => $v) {
+        if ($v === null || $v === '') continue;
+        $lines[] = trim((string)$k) . ': ' . trim((string)$v);
+    }
+    $lines[] = str_repeat('-', 82);
+    $lines[] = 'ZAAKCEPTOWANY';
+    $lines[] = 'Zaakceptowal(a): ' . $approverName;
+    $lines[] = 'Data: ' . date('d.m.Y H:i');
+
+    $chunks = array_chunk($lines, 48);
+    $objects = [];
+    $objects[1] = "<< /Type /Catalog /Pages 2 0 R >>";
+
+    $pageObjectIds = [];
+    $contentObjectIds = [];
+    $fontObjectId = 3;
+    $nextObjectId = 4;
+
+    foreach ($chunks as $chunk) {
+        $stream = "BT
+/F1 10 Tf
+40 800 Td
+14 TL
+";
+        foreach ($chunk as $line) {
+            $stream .= '(' . request_pdf_safe_text($line) . ") Tj
+T*
+";
+        }
+        $stream .= "ET";
+
+        $contentId = $nextObjectId++;
+        $pageId = $nextObjectId++;
+        $contentObjectIds[] = $contentId;
+        $pageObjectIds[] = $pageId;
+        $objects[$contentId] = "<< /Length " . strlen($stream) . " >>
+stream
+" . $stream . "
+endstream";
+    }
+
+    $kidsParts = array();
+    foreach ($pageObjectIds as $id) { $kidsParts[] = $id . ' 0 R'; }
+    $kids = implode(' ', $kidsParts);
+    $objects[2] = "<< /Type /Pages /Kids [ {$kids} ] /Count " . count($pageObjectIds) . " >>";
+    $objects[$fontObjectId] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
+
+    foreach ($pageObjectIds as $idx => $pageId) {
+        $contentId = $contentObjectIds[$idx];
+        $objects[$pageId] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 {$fontObjectId} 0 R >> >> /Contents {$contentId} 0 R >>";
+    }
+
+    ksort($objects);
+    $pdf = "%PDF-1.4
+";
+    $offsets = [0];
+    foreach ($objects as $id => $body) {
+        $offsets[$id] = strlen($pdf);
+        $pdf .= "{$id} 0 obj
+{$body}
+endobj
+";
+    }
+
+    $xrefOffset = strlen($pdf);
+    $maxId = max(array_keys($objects));
+    $pdf .= "xref
+0 " . ($maxId + 1) . "
+";
+    $pdf .= "0000000000 65535 f 
+";
+    for ($i = 1; $i <= $maxId; $i++) {
+        $off = $offsets[$i] ?? 0;
+        $pdf .= sprintf("%010d 00000 n 
+", $off);
+    }
+    $pdf .= "trailer
+<< /Size " . ($maxId + 1) . " /Root 1 0 R >>
+startxref
+{$xrefOffset}
+%%EOF";
 
     $dir = __DIR__ . '/../storage/requests';
     if (!is_dir($dir)) mkdir($dir, 0755, true);
-    $filename = 'wniosek_' . $req['id'] . '_' . date('Ymd_His') . '.html';
+    $filename = 'wniosek_' . $req['id'] . '_' . date('Ymd_His') . '.pdf';
     $filepath = $dir . '/' . $filename;
+    file_put_contents($filepath, $pdf);
 
-    $dataHtml = '';
-    foreach ($data as $k => $v) {
-        if ($v) $dataHtml .= '<tr><td style="padding:6px 12px;border:1px solid #ddd;font-weight:600;width:200px">' . htmlspecialchars($k) . '</td><td style="padding:6px 12px;border:1px solid #ddd">' . htmlspecialchars($v) . '</td></tr>';
-    }
-
-    $html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>' . htmlspecialchars($title) . '</title>';
-    $html .= '<style>body{font-family:Arial,sans-serif;font-size:13px;color:#1c1917;max-width:700px;margin:40px auto;padding:0 20px}';
-    $html .= 'h1{font-size:18px;text-align:center;margin-bottom:4px}h2{font-size:13px;text-align:center;color:#666;margin-bottom:24px;font-weight:400}';
-    $html .= 'table{width:100%;border-collapse:collapse;margin:16px 0}';
-    $html .= '.stamp{margin-top:32px;padding:16px;border:2px solid #16a34a;border-radius:8px;background:#f0fdf4;text-align:center}';
-    $html .= '.stamp-title{font-size:14px;font-weight:700;color:#16a34a}.stamp-info{font-size:12px;color:#166534;margin-top:4px}';
-    $html .= '@media print{body{margin:20mm}}</style></head><body>';
-    $html .= '<h1>' . htmlspecialchars($title) . '</h1>';
-    $html .= '<h2>Pracownik: ' . htmlspecialchars($empName) . '</h2>';
-    $html .= '<table>' . $dataHtml . '</table>';
-    $html .= '<div class="stamp"><div class="stamp-title">✓ ZAAKCEPTOWANY</div>';
-    $html .= '<div class="stamp-info">Zaakceptował(a): ' . htmlspecialchars($approverName) . '</div>';
-    $html .= '<div class="stamp-info">Data: ' . date('d.m.Y H:i') . '</div>';
-    $html .= '<div class="stamp-info" style="margin-top:8px;font-size:10px;color:#999">Dokument wygenerowany automatycznie przez system ePracownik SCK</div>';
-    $html .= '</div></body></html>';
-
-    file_put_contents($filepath, $html);
-
-    // Set expiry (183 days)
     $expires = date('Y-m-d', strtotime('+183 days'));
     $db->prepare('UPDATE form_requests SET pdf_file=?, expires_at=? WHERE id=?')->execute([$filename, $expires, $req['id']]);
 
