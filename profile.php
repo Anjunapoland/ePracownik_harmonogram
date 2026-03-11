@@ -1,20 +1,38 @@
 <?php
 require_once __DIR__ . '/includes/layout.php';
 $user = require_login();
+ensure_users_profile_columns();
 $force = !empty($_GET['force']) || $user['must_change_password'];
 $msg=''; $mt='';
 
 if ($_SERVER['REQUEST_METHOD']==='POST') {
     verify_csrf();
-    $old=$_POST['old_password']??''; $new=$_POST['new_password']??''; $rep=$_POST['repeat_password']??'';
-    if (!$force && !password_verify($old,$user['password'])) { $msg='Obecne hasło jest nieprawidłowe'; $mt='danger'; }
-    elseif (strlen($new)<6) { $msg='Nowe hasło musi mieć min. 6 znaków'; $mt='danger'; }
-    elseif ($new!==$rep) { $msg='Hasła nie są identyczne'; $mt='danger'; }
-    else {
-        get_db()->prepare('UPDATE users SET password=?, must_change_password=0 WHERE id=?')->execute([password_hash($new,PASSWORD_DEFAULT),$user['id']]);
-        $msg='Hasło zostało zmienione'; $mt='success'; $force=false;
-        $stmt=get_db()->prepare('SELECT * FROM users WHERE id=?'); $stmt->execute([$user['id']]); $user=$stmt->fetch();
+    $action = $_POST['action'] ?? 'password';
+
+    if ($action === 'job_title') {
+        $jobTitle = trim($_POST['job_title'] ?? '');
+        if (mb_strlen($jobTitle) > 191) {
+            $msg = 'Stanowisko służbowe może mieć maksymalnie 191 znaków';
+            $mt = 'danger';
+        } else {
+            get_db()->prepare('UPDATE users SET job_title=? WHERE id=?')->execute([$jobTitle, $user['id']]);
+            $msg = 'Zapisano stanowisko służbowe';
+            $mt = 'success';
+        }
+    } else {
+        $old=$_POST['old_password']??''; $new=$_POST['new_password']??''; $rep=$_POST['repeat_password']??'';
+        if (!$force && !password_verify($old,$user['password'])) { $msg='Obecne hasło jest nieprawidłowe'; $mt='danger'; }
+        elseif (strlen($new)<6) { $msg='Nowe hasło musi mieć min. 6 znaków'; $mt='danger'; }
+        elseif ($new!==$rep) { $msg='Hasła nie są identyczne'; $mt='danger'; }
+        else {
+            get_db()->prepare('UPDATE users SET password=?, must_change_password=0 WHERE id=?')->execute([password_hash($new,PASSWORD_DEFAULT),$user['id']]);
+            $msg='Hasło zostało zmienione'; $mt='success'; $force=false;
+        }
     }
+
+    $stmt=get_db()->prepare('SELECT * FROM users WHERE id=?');
+    $stmt->execute([$user['id']]);
+    $user=$stmt->fetch();
 }
 layout_start('Moje konto');
 ?>
@@ -38,8 +56,21 @@ layout_start('Moje konto');
 </div>
 
 <div class="card" style="max-width:600px;margin-top:20px">
+    <h3>🪪 Stanowisko służbowe</h3>
+    <form method="post">
+        <?=csrf_field()?>
+        <input type="hidden" name="action" value="job_title">
+        <label class="lbl">Stanowisko</label>
+        <input type="text" name="job_title" class="input" maxlength="191" placeholder="np. Specjalista ds. kultury" value="<?=h($user['job_title'] ?? '')?>">
+        <div style="margin-top:16px"><button type="submit" class="btn btn-primary">✓ Zapisz stanowisko</button></div>
+    </form>
+</div>
+
+<div class="card" style="max-width:600px;margin-top:20px">
     <h3><?=$force?'🔒 Ustaw nowe hasło':'🔒 Zmiana hasła'?></h3>
-    <form method="post"><?=csrf_field()?>
+    <form method="post">
+        <?=csrf_field()?>
+        <input type="hidden" name="action" value="password">
         <?php if(!$force):?><label class="lbl">Obecne hasło</label><input type="password" name="old_password" class="input" required><hr><?php endif;?>
         <label class="lbl">Nowe hasło (min. 6 znaków)</label><input type="password" name="new_password" class="input" required minlength="6">
         <label class="lbl">Powtórz nowe hasło</label><input type="password" name="repeat_password" class="input" required>

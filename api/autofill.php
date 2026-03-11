@@ -70,7 +70,12 @@ foreach ($empIds as $uid) {
         
         if ($existingId) {
             if ($mode === 'overwrite') {
+                $existingTypeStmt = $db->prepare('SELECT shift_type FROM schedule_entries WHERE id=?');
+                $existingTypeStmt->execute([$existingId]);
+                $prevType = $existingTypeStmt->fetchColumn();
+
                 $updateStmt->execute(['standard', $start, $end, null, $existingId]);
+                apply_wolne_overtime_balance_change((int)$uid, $date, $prevType !== false ? (string)$prevType : null, 'standard');
                 $count++;
             }
             // mode=empty: skip existing entries
