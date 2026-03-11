@@ -517,7 +517,7 @@ function send_notification_email_with_attachment(string $to, string $subject, st
 }
 
 function request_pdf_escape(string $text): string {
-    return str_replace(["\\", "(", ")"], ["\\\\", "\(", "\)"], $text);
+    return str_replace(array('\\', '(', ')'), array('\\\\', '\(', '\)'), $text);
 }
 
 function request_pdf_safe_text(string $text): string {
@@ -541,7 +541,7 @@ function generate_request_pdf(array $req, string $approverName): string {
     $emp->execute([$req['user_id']]);
     $empName = (string)($emp->fetchColumn() ?: 'Nieznany');
 
-    $lines = [];
+    $lines = array();
     $lines[] = $title;
     $lines[] = 'Pracownik: ' . $empName;
     $lines[] = str_repeat('-', 82);
@@ -555,35 +555,27 @@ function generate_request_pdf(array $req, string $approverName): string {
     $lines[] = 'Data: ' . date('d.m.Y H:i');
 
     $chunks = array_chunk($lines, 48);
-    $objects = [];
-    $objects[1] = "<< /Type /Catalog /Pages 2 0 R >>";
+    $objects = array();
+    $objects[1] = '<< /Type /Catalog /Pages 2 0 R >>';
 
-    $pageObjectIds = [];
-    $contentObjectIds = [];
+    $pageObjectIds = array();
+    $contentObjectIds = array();
     $fontObjectId = 3;
     $nextObjectId = 4;
 
     foreach ($chunks as $chunk) {
-        $stream = "BT
-/F1 10 Tf
-40 800 Td
-14 TL
-";
+        $stream = "BT\n/F1 10 Tf\n40 800 Td\n14 TL\n";
         foreach ($chunk as $line) {
-            $stream .= '(' . request_pdf_safe_text($line) . ") Tj
-T*
-";
+            $stream .= '(' . request_pdf_safe_text($line) . ") Tj\nT*\n";
         }
-        $stream .= "ET";
+        $stream .= 'ET';
 
         $contentId = $nextObjectId++;
         $pageId = $nextObjectId++;
         $contentObjectIds[] = $contentId;
         $pageObjectIds[] = $pageId;
-        $objects[$contentId] = "<< /Length " . strlen($stream) . " >>
-stream
-" . $stream . "
-endstream";
+
+        $objects[$contentId] = '<< /Length ' . strlen($stream) . " >>\nstream\n" . $stream . "\nendstream";
     }
     $lines[] = str_repeat('-', 88);
     $lines[] = 'ZAAKCEPTOWANY';
@@ -616,48 +608,42 @@ endstream";
         }
 
     $kidsParts = array();
-    foreach ($pageObjectIds as $id) { $kidsParts[] = $id . ' 0 R'; }
+    foreach ($pageObjectIds as $id) {
+        $kidsParts[] = $id . ' 0 R';
+    }
     $kids = implode(' ', $kidsParts);
-    $objects[2] = "<< /Type /Pages /Kids [ {$kids} ] /Count " . count($pageObjectIds) . " >>";
-    $objects[$fontObjectId] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
+
+    $objects[2] = '<< /Type /Pages /Kids [ ' . $kids . ' ] /Count ' . count($pageObjectIds) . ' >>';
+    $objects[$fontObjectId] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>';
 
     foreach ($pageObjectIds as $idx => $pageId) {
         $contentId = $contentObjectIds[$idx];
-        $objects[$pageId] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 {$fontObjectId} 0 R >> >> /Contents {$contentId} 0 R >>";
+        $objects[$pageId] = '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 ' . $fontObjectId . ' 0 R >> >> /Contents ' . $contentId . ' 0 R >>';
     }
 
     ksort($objects);
-    $pdf = "%PDF-1.4
-";
-    $offsets = [0];
+    $pdf = "%PDF-1.4\n";
+    $offsets = array(0 => 0);
     foreach ($objects as $id => $body) {
         $offsets[$id] = strlen($pdf);
-        $pdf .= "{$id} 0 obj
-{$body}
-endobj
-";
+        $pdf .= $id . " 0 obj\n" . $body . "\nendobj\n";
     }
 
     $xrefOffset = strlen($pdf);
     $maxId = max(array_keys($objects));
-    $pdf .= "xref
-0 " . ($maxId + 1) . "
-";
-    $pdf .= "0000000000 65535 f 
-";
+    $pdf .= 'xref' . "\n" . '0 ' . ($maxId + 1) . "\n";
+    $pdf .= "0000000000 65535 f \n";
     for ($i = 1; $i <= $maxId; $i++) {
-        $off = $offsets[$i] ?? 0;
-        $pdf .= sprintf("%010d 00000 n 
-", $off);
+        $off = isset($offsets[$i]) ? $offsets[$i] : 0;
+        $pdf .= sprintf("%010d 00000 n \n", $off);
     }
-    $pdf .= "trailer
-<< /Size " . ($maxId + 1) . " /Root 1 0 R >>
-startxref
-{$xrefOffset}
-%%EOF";
+    $pdf .= 'trailer' . "\n" . '<< /Size ' . ($maxId + 1) . ' /Root 1 0 R >>' . "\n";
+    $pdf .= 'startxref' . "\n" . $xrefOffset . "\n%%EOF";
 
     $dir = __DIR__ . '/../storage/requests';
-    if (!is_dir($dir)) mkdir($dir, 0755, true);
+    if (!is_dir($dir)) {
+        mkdir($dir, 0755, true);
+    }
     $filename = 'wniosek_' . $req['id'] . '_' . date('Ymd_His') . '.pdf';
     $filepath = $dir . '/' . $filename;
     file_put_contents($filepath, $pdf);
