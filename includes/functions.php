@@ -537,9 +537,7 @@ function request_pdf_safe_text(string $text): string {
     if ($ascii === false || $ascii === '') {
         $ascii = preg_replace('/[^\x20-\x7E]/', ' ', $text) ?? '';
     }
-    $ascii = str_replace(["
-", "
-", "	"], ' ', $ascii);
+    $ascii = str_replace(array("\n", "\r", "\t"), ' ', $ascii);
     $ascii = preg_replace('/[^\x20-\x7E]/', ' ', $ascii) ?? '';
     $ascii = preg_replace('/\s+/', ' ', trim($ascii)) ?? '';
     return request_pdf_escape($ascii);
@@ -629,7 +627,9 @@ endstream";
             $y += 20;
         }
 
-    $kids = implode(' ', array_map(static fn($id) => $id . ' 0 R', $pageObjectIds));
+    $kidsParts = array();
+    foreach ($pageObjectIds as $id) { $kidsParts[] = $id . ' 0 R'; }
+    $kids = implode(' ', $kidsParts);
     $objects[2] = "<< /Type /Pages /Kids [ {$kids} ] /Count " . count($pageObjectIds) . " >>";
     $objects[$fontObjectId] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
 
